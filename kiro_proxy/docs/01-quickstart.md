@@ -12,6 +12,23 @@
 
 解压后双击运行即可。
 
+如果使用 Linux 二进制部署，推荐把 `.env` 放在可执行文件同目录：
+
+```text
+/opt/kiroproxy/
+├── KiroProxy
+└── .env
+```
+
+示例：
+
+```env
+KIRO_SERVER_PORT=18080
+KIROPROXY_ADMIN_USERNAME=root
+KIROPROXY_ADMIN_PASSWORD=change-this-password
+KIROPROXY_API_KEY=change-this-api-key
+```
+
 ### 方式二：从源码运行
 
 ```bash
@@ -75,7 +92,7 @@ Kiro Proxy 需要 Kiro 账号的 Token 才能工作。有两种方式获取：
 ```
 名称: Kiro Proxy
 API Provider: Anthropic
-API Key: any（随便填一个）
+API Key: 与服务端 `KIROPROXY_API_KEY` 保持一致
 Base URL: http://localhost:8080
 模型: claude-sonnet-4
 ```
@@ -115,7 +132,7 @@ model = "gemini-pro"
 任何支持 OpenAI 或 Anthropic API 的客户端都可以使用：
 
 - **Base URL**: `http://localhost:8080` 或 `http://localhost:8080/v1`
-- **API Key**: 任意值（代理不验证）
+- **API Key**: 与服务端 `KIROPROXY_API_KEY` 保持一致
 - **模型**: 见下方模型对照表
 
 ---

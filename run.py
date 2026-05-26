@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Kiro API Proxy 启动脚本"""
 import sys
+import os
 
 # ============================================================
 # PyInstaller 显式导入块
@@ -13,11 +14,14 @@ import kiro_proxy.launcher
 import kiro_proxy.cli
 import kiro_proxy.config
 import kiro_proxy.converters
+import kiro_proxy.env_config
 import kiro_proxy.web
 try:
     import kiro_proxy.web.webui
 except Exception:
     pass
+import kiro_proxy.web.login_page
+import kiro_proxy.web.auth
 import kiro_proxy.web.i18n
 import kiro_proxy.core
 import kiro_proxy.core.account
@@ -45,6 +49,13 @@ import kiro_proxy.auth.device_flow
 # ============================================================
 
 if __name__ == "__main__":
+    def _default_port():
+        env_port = os.getenv("PORT", "").strip()
+        if env_port.isdigit():
+            return int(env_port)
+        from kiro_proxy.env_config import SERVER_PORT
+        return SERVER_PORT
+
     # CLI 子命令模式
     if len(sys.argv) > 1 and sys.argv[1] in ("accounts", "login", "status", "serve"):
         from kiro_proxy.cli import main
@@ -52,7 +63,7 @@ if __name__ == "__main__":
     
     # --no-ui 模式：跳过 UI 直接启动
     elif len(sys.argv) > 1 and sys.argv[1] == "--no-ui":
-        port = int(sys.argv[2]) if len(sys.argv) > 2 else 8080
+        port = int(sys.argv[2]) if len(sys.argv) > 2 else _default_port()
         from kiro_proxy.main import run
         run(port)
     
@@ -64,5 +75,9 @@ if __name__ == "__main__":
     
     # 默认：显示端口配置 UI
     else:
-        from kiro_proxy.launcher import launch_with_ui
-        launch_with_ui()
+        if sys.platform.startswith("linux") and getattr(sys, "frozen", False):
+            from kiro_proxy.main import run
+            run(_default_port())
+        else:
+            from kiro_proxy.launcher import launch_with_ui
+            launch_with_ui()

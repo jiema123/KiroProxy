@@ -8,13 +8,23 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from .config import MODELS_URL
+from . import __version__
+from .api_auth import verify_api_key
 from .core import state, scheduler, stats_manager
 from .handlers import anthropic, openai, gemini, admin
 from .handlers import responses as responses_handler
 from .http_client import get_httpx_verify_setting, create_async_client
-from .web import get_html_page
+from .web import get_html_page, get_login_page
+from .web.auth import (
+    SESSION_COOKIE_NAME,
+    clear_session,
+    create_session,
+    is_authenticated,
+    verify_credentials,
+)
 from .credential import generate_machine_id, get_kiro_version
 from .model_resolver import get_model_cache, FALLBACK_MODELS
 from .logger import get_logger
@@ -49,11 +59,74 @@ app.add_middleware(
 )
 
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+def _is_protected_path(path: str) -> bool:
+    return path == "/" or path.startswith("/api/")
+
+
+def _is_auth_exempt_path(path: str) -> bool:
+    return path.startswith("/auth/") or path.startswith("/assets/")
+
+
+def _is_proxy_api_path(path: str) -> bool:
+    return path.startswith("/v1/") or path.startswith("/v1beta/")
+
+
+@app.middleware("http")
+async def admin_auth_middleware(request: Request, call_next):
+    path = request.url.path
+    if _is_proxy_api_path(path):
+        if not verify_api_key(request.headers.get("Authorization")):
+            return JSONResponse(status_code=401, content={"detail": "Invalid API key"})
+        return await call_next(request)
+
+    if _is_auth_exempt_path(path) or not _is_protected_path(path):
+        return await call_next(request)
+
+    session_token = request.cookies.get(SESSION_COOKIE_NAME)
+    if is_authenticated(session_token):
+        return await call_next(request)
+
+    if path == "/":
+        return HTMLResponse(get_login_page())
+    return JSONResponse(status_code=401, content={"detail": "Authentication required"})
+
+
 # ==================== Web UI ====================
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
     return get_html_page()
+
+
+@app.post("/auth/login")
+async def auth_login(payload: LoginRequest):
+    if not verify_credentials(payload.username, payload.password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    token = create_session()
+    response = JSONResponse({"ok": True})
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=False,
+        max_age=7 * 24 * 60 * 60,
+    )
+    return response
+
+
+@app.post("/auth/logout")
+async def auth_logout(request: Request):
+    clear_session(request.cookies.get(SESSION_COOKIE_NAME))
+    response = JSONResponse({"ok": True})
+    response.delete_cookie(SESSION_COOKIE_NAME)
+    return response
 
 
 @app.get("/assets/{path:path}")
@@ -168,6 +241,11 @@ async def gemini_generate(model_name: str, request: Request):
 @app.get("/api/status")
 async def api_status():
     return await admin.get_status()
+
+
+@app.get("/api/security-config")
+async def api_security_config():
+    return await admin.get_security_config()
 
 @app.post("/api/event_logging/batch")
 async def api_event_logging_batch(request: Request):
@@ -579,7 +657,7 @@ def run(port: int = 8080):
     from .core import state
     state.current_port = port  # 设置当前端口供 WebUI 显示
     print(f"\n{'='*50}")
-    print(f"  Kiro API Proxy v1.7.16")
+    print(f"  Kiro API Proxy v{__version__}")
     print(f"  http://localhost:{port}")
     print(f"{'='*50}\n")
     uvicorn.run(app, host="0.0.0.0", port=port)

@@ -9,11 +9,21 @@ from dataclasses import asdict
 from fastapi import Request, HTTPException, Query
 
 from ..config import TOKEN_PATH, MODELS_URL
+from ..api_auth import get_api_key
 from ..core import state, Account, stats_manager, get_browsers_info, open_url, flow_monitor, get_account_usage
 from ..credential import quota_manager, generate_machine_id, get_kiro_version, CredentialStatus
 from ..auth import start_device_flow, poll_device_flow, cancel_device_flow, get_login_state, save_credentials_to_file
 from ..auth import start_social_auth, exchange_social_auth_token, cancel_social_auth, get_social_auth_state
 from ..http_client import get_httpx_verify_setting, create_async_client
+from ..web.auth import get_admin_username
+
+
+def _mask_secret(value: str) -> str:
+    if not value:
+        return ""
+    if len(value) <= 6:
+        return "*" * len(value)
+    return f"{value[:3]}***{value[-2:]}"
 
 
 async def get_status():
@@ -28,6 +38,15 @@ async def get_status():
         "has_available_accounts": has_available,
         "port": state.current_port,
         "stats": stats
+    }
+
+
+async def get_security_config():
+    api_key = get_api_key()
+    return {
+        "admin_username": get_admin_username(),
+        "proxy_api_key_masked": _mask_secret(api_key),
+        "proxy_api_key_is_default": api_key == "sk-any",
     }
 
 

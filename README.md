@@ -44,6 +44,20 @@ Kiro API Proxy 是一个面向开发者工具链的开源兼容层与请求路�
 - **Web UI** - 提供简洁管理界面，支持监控、日志、设置
 - **多语言界面** - 支持中文和英文界面切换
 
+## 界面截图
+
+### 登录页
+
+![登录页](https://img.justnow.uk/2026/05/409c05fc86e01b94ceafd3671932679a.png)
+
+### 账号管理
+
+![账号管理](https://img.justnow.uk/2026/05/bd442f8165e1e9a34c8b1200f3d606df.png)
+
+### API 配置页
+
+![API 配置页](https://img.justnow.uk/2026/05/05d94f53653751f6dbae2c1a3adfa15f.png)
+
 ### v1.8.1 新功能
 - **每账号独立代理** - 每个 Kiro 账号可配置独立的代理服务器 (HTTP/SOCKS5)
   - 账号代理优先级高于全局代理，留空则回退到全局代理或直连
@@ -381,6 +395,94 @@ python build.py
 ```
 
 输出文件位于 `dist/` 目录。
+
+### Linux 二进制
+
+项目现在支持打包为可直接在 Linux 上运行的单文件二进制。
+
+```bash
+# 方式 1：在 Linux 主机上直接构建
+python build.py --linux-binary
+
+# 方式 2：在 macOS / Windows 上通过 Docker 构建 Linux 二进制
+python build.py --linux-docker
+```
+
+产物位于 `release/KiroProxy-1.8.1-Linux.tar.gz`。解压后直接运行：
+
+```bash
+tar -xzf release/KiroProxy-1.8.1-Linux.tar.gz
+./KiroProxy
+```
+
+如果你用二进制部署，`.env` 可以直接放在 `KiroProxy` 可执行文件同目录，程序会优先读取那里。
+
+示例目录：
+
+```text
+/opt/kiroproxy/
+├── KiroProxy
+└── .env
+```
+
+说明：
+- Linux 二进制默认直接启动服务，不依赖桌面 GUI。
+- 默认端口为 `8080`，可通过环境变量 `PORT` 覆盖。
+
+### 管理页登录
+
+- 启动页和 `/api/*` 管理接口现在需要登录
+- 默认账号：`admin`
+- 默认密码：`kiroproxy`
+- 可通过环境变量 `KIROPROXY_ADMIN_USERNAME`、`KIROPROXY_ADMIN_PASSWORD` 覆盖
+- `/v1/*` 代理接口不受这层登录影响
+
+推荐方式：在项目根目录创建 `.env`
+
+```bash
+cp .env.example .env
+```
+
+二进制部署时，也可以把同样内容写到可执行文件所在目录的 `.env` 中。
+
+然后写入：
+
+```env
+KIROPROXY_ADMIN_USERNAME=admin
+KIROPROXY_ADMIN_PASSWORD=change-this-password
+```
+
+### 代理 API Key
+
+- `/v1/*` 和 `/v1beta/*` 现在会校验 `Authorization: Bearer <key>`
+- 默认 key：`sk-any`
+- 可通过环境变量 `KIROPROXY_API_KEY` 覆盖
+
+示例：
+
+```bash
+export KIROPROXY_API_KEY='your-secret-key'
+python3 run.py 8080
+```
+
+或写入 `.env`：
+
+```env
+KIROPROXY_API_KEY=your-secret-key
+```
+
+客户端需要使用同样的值，例如：
+
+```bash
+export ANTHROPIC_BASE_URL='http://127.0.0.1:8080'
+export ANTHROPIC_AUTH_TOKEN='your-secret-key'
+```
+
+端口也建议通过 `.env` 配置：
+
+```env
+KIRO_SERVER_PORT=8080
+```
 
 ## 适用场景
 

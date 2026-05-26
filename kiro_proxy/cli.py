@@ -6,6 +6,8 @@ import json
 import sys
 from pathlib import Path
 
+from . import __version__
+
 
 def cmd_serve(args):
     """启动代理服务"""
@@ -282,7 +284,7 @@ def main():
         prog="kiro-proxy",
         description="Kiro API Proxy CLI"
     )
-    parser.add_argument("-v", "--version", action="version", version="1.7.16")
+    parser.add_argument("-v", "--version", action="version", version=__version__)
     
     subparsers = parser.add_subparsers(dest="command", help="命令")
     

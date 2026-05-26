@@ -18,6 +18,29 @@
 
 最简单的方式，不需要安装任何依赖。
 
+### 二进制同目录 `.env` 配置（推荐）
+
+如果你使用打包后的 `KiroProxy` 二进制，推荐把 `.env` 直接放在可执行文件同目录。
+
+目录结构示例：
+
+```text
+/opt/kiroproxy/
+├── KiroProxy
+└── .env
+```
+
+`.env` 示例：
+
+```env
+KIRO_SERVER_PORT=18080
+KIROPROXY_ADMIN_USERNAME=root
+KIROPROXY_ADMIN_PASSWORD=change-this-password
+KIROPROXY_API_KEY=change-this-api-key
+```
+
+程序会优先读取 `KiroProxy` 可执行文件同目录的 `.env`。
+
 ### Linux (x86_64)
 
 ```bash
@@ -242,6 +265,18 @@ docker-compose up -d
 ---
 
 ## 账号配置
+
+在添加账号前，建议先完成以下安全配置：
+
+- 管理页账号：
+  - `KIROPROXY_ADMIN_USERNAME`
+  - `KIROPROXY_ADMIN_PASSWORD`
+- 代理 API Key：
+  - `KIROPROXY_API_KEY`
+- 服务端口：
+  - `KIRO_SERVER_PORT`
+
+这些配置都可以写在 `.env` 中。
 
 服务器通常没有浏览器，有以下几种方式添加账号：
 

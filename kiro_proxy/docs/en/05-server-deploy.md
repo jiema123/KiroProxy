@@ -17,6 +17,29 @@ This guide covers deploying Kiro Proxy on various server environments.
 
 Simplest method, no dependencies required.
 
+### `.env` next to the binary (Recommended)
+
+If you are using the packaged `KiroProxy` binary, place `.env` in the same directory as the executable.
+
+Example layout:
+
+```text
+/opt/kiroproxy/
+├── KiroProxy
+└── .env
+```
+
+Example `.env`:
+
+```env
+KIRO_SERVER_PORT=18080
+KIROPROXY_ADMIN_USERNAME=root
+KIROPROXY_ADMIN_PASSWORD=change-this-password
+KIROPROXY_API_KEY=change-this-api-key
+```
+
+The program will prefer the `.env` file in the executable directory.
+
 ### Linux (x86_64)
 
 ```bash
@@ -123,6 +146,18 @@ docker run -d -p 8080:8080 -v kiro-data:/root/.config/kiro-proxy --name kiro-pro
 ---
 
 ## Account Configuration
+
+Before adding accounts, configure these security settings first:
+
+- Admin credentials:
+  - `KIROPROXY_ADMIN_USERNAME`
+  - `KIROPROXY_ADMIN_PASSWORD`
+- Proxy API key:
+  - `KIROPROXY_API_KEY`
+- Service port:
+  - `KIRO_SERVER_PORT`
+
+All of these can be placed in `.env`.
 
 Servers usually don't have browsers. Several ways to add accounts:
 

@@ -20,6 +20,8 @@ all_modules = [
     'kiro_proxy.cli',
     'kiro_proxy.web',
     'kiro_proxy.web.webui',
+    'kiro_proxy.web.login_page',
+    'kiro_proxy.web.auth',
     'kiro_proxy.web.i18n',
     'kiro_proxy.core',
     'kiro_proxy.core.account',

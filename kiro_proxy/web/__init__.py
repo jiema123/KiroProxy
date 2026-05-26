@@ -34,3 +34,5 @@ try:
 except Exception:
     _webui = _load_webui_module()
     get_html_page = _webui.get_html_page
+
+from .login_page import get_login_page

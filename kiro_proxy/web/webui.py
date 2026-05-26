@@ -1,5 +1,7 @@
 """Web UI - 组件化单文件结构"""
 
+from .. import __version__
+
 # ==================== CSS 样式 ====================
 CSS_BASE = '''
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -15,7 +17,7 @@ CSS_LAYOUT = '''
 header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border); }
 h1 { font-size: 1.5rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; }
 h1 img { width: 28px; height: 28px; }
-.status { font-size: 0.875rem; color: var(--muted); display: flex; align-items: center; gap: 1rem; }
+.status { font-size: 0.875rem; color: var(--muted); display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; justify-content: flex-end; }
 .status-dot { width: 8px; height: 8px; border-radius: 50%; }
 .status-dot.ok { background: var(--success); }
 .status-dot.err { background: var(--error); }
@@ -25,6 +27,7 @@ h1 img { width: 28px; height: 28px; }
 .panel { display: none; }
 .panel.active { display: block; }
 .footer { text-align: center; color: var(--muted); font-size: 0.75rem; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+.logout-btn { padding: 0.45rem 0.85rem; font-size: 0.8rem; }
 '''
 
 CSS_COMPONENTS = '''
@@ -324,13 +327,14 @@ HTML_API = '''
   </div>
   <div class="card">
     <h3>配置示例</h3>
+    <div id="securitySummary" style="margin-bottom:1rem;color:var(--muted);font-size:0.875rem">加载安全配置中...</div>
     <h4 style="color:var(--muted);margin-bottom:0.5rem">Claude Code</h4>
     <pre><code>Base URL: <span class="pyUrl"></span>
-API Key: any
+API Key: <span class="proxyApiKeyText">sk-any（默认，可由 KIROPROXY_API_KEY 覆盖）</span>
 模型: claude-sonnet-4</code></pre>
     <h4 style="color:var(--muted);margin-top:1rem;margin-bottom:0.5rem">Codex CLI</h4>
     <pre><code>Endpoint: <span class="pyUrl"></span>/v1
-API Key: any
+API Key: <span class="proxyApiKeyText">sk-any（默认，可由 KIROPROXY_API_KEY 覆盖）</span>
 模型: gpt-4o</code></pre>
   </div>
   <div class="card">
@@ -340,6 +344,7 @@ API Key: any
     <h4 style="color:var(--muted);margin-bottom:0.5rem">临时生效（当前终端）</h4>
     <pre id="envTempCmd"><code>export ANTHROPIC_BASE_URL="<span class="pyUrl"></span>"
 export ANTHROPIC_AUTH_TOKEN="sk-any"
+export KIROPROXY_API_KEY="sk-any"
 export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1</code></pre>
     <button class="copy-btn" onclick="copyEnvTemp()" style="margin-top:0.5rem">复制命令</button>
     
@@ -351,6 +356,7 @@ cat > ~/.claude/settings.json << 'EOF'
   "env": {
     "ANTHROPIC_BASE_URL": "<span class="pyUrl"></span>",
     "ANTHROPIC_AUTH_TOKEN": "sk-any",
+    "KIROPROXY_API_KEY": "sk-any",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
   }
 }
@@ -360,11 +366,11 @@ EOF</code></pre>
     <h4 style="color:var(--muted);margin-top:1rem;margin-bottom:0.5rem">清除配置</h4>
     <pre id="envClearCmd"><code># 删除 Claude Code 配置
 rm -f ~/.claude/settings.json
-unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC</code></pre>
+unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN KIROPROXY_API_KEY CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC</code></pre>
     <button class="copy-btn" onclick="copyEnvClear()" style="margin-top:0.5rem">复制命令</button>
     
     <p style="color:var(--muted);font-size:0.75rem;margin-top:1rem">
-      💡 使用 <code>ANTHROPIC_AUTH_TOKEN</code> + <code>CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1</code> 可跳过登录
+      💡 <span id="proxyApiKeyHint">默认代理 API Key 为 <code>sk-any</code>；如需自定义，请在服务端设置 <code>KIROPROXY_API_KEY</code>，并让客户端使用相同值</span>
     </p>
   </div>
   <div class="card">
@@ -374,6 +380,8 @@ unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_DISABLE_NONESSENTIAL_T
       <thead><tr><th>Kiro 模型</th><th>能力</th><th>可用名称</th></tr></thead>
       <tbody>
         <tr><td><code>claude-sonnet-4</code></td><td>⭐⭐⭐ 推荐</td><td>gpt-4o, gpt-4, claude-3-5-sonnet-*, sonnet</td></tr>
+        <tr><td><code>claude-sonnet-4.6</code></td><td>⭐⭐⭐⭐ 新版</td><td>gpt-5.4</td></tr>
+        <tr><td><code>claude-opus-4.7</code></td><td>⭐⭐⭐⭐⭐ 最新</td><td>gpt-5.5</td></tr>
         <tr><td><code>claude-sonnet-4.5</code></td><td>⭐⭐⭐⭐ 更强</td><td>gemini-1.5-pro</td></tr>
         <tr><td><code>claude-haiku-4.5</code></td><td>⚡ 快速</td><td>gpt-4o-mini, gpt-3.5-turbo, haiku</td></tr>
         <tr><td><code>claude-opus-4.5</code></td><td>⭐⭐⭐⭐⭐ 最强</td><td>o1, o1-preview, opus</td></tr>
@@ -556,6 +564,7 @@ function copyEnvTemp(){
   const url=location.origin;
   copy(`export ANTHROPIC_BASE_URL="${url}"
 export ANTHROPIC_AUTH_TOKEN="sk-any"
+export KIROPROXY_API_KEY="sk-any"
 export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`);
 }
 
@@ -568,6 +577,7 @@ cat > ~/.claude/settings.json << 'EOF'
   "env": {
     "ANTHROPIC_BASE_URL": "${url}",
     "ANTHROPIC_AUTH_TOKEN": "sk-any",
+    "KIROPROXY_API_KEY": "sk-any",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
   }
 }
@@ -578,7 +588,7 @@ echo "配置完成，请重新打开终端运行 claude"`);
 function copyEnvClear(){
   copy(`# 删除 Claude Code 配置
 rm -f ~/.claude/settings.json
-unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC
+unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN KIROPROXY_API_KEY CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC
 echo "配置已清除"`);
 }
 
@@ -592,6 +602,14 @@ function escapeHtml(text){
   const div=document.createElement('div');
   div.textContent=text;
   return div.innerHTML;
+}
+
+async function logout(){
+  try{
+    await fetch('/auth/logout',{method:'POST'});
+  }finally{
+    location.reload();
+  }
 }
 '''
 
@@ -642,6 +660,28 @@ function copyRestartCmd(){
 // URLs
 $('#baseUrl').textContent=location.origin;
 $$('.pyUrl').forEach(e=>e.textContent=location.origin);
+
+async function loadSecurityConfig(){
+  try{
+    const r=await fetch('/api/security-config');
+    const d=await r.json();
+    const apiKeyText = d.proxy_api_key_is_default
+      ? 'sk-any（默认，可由 KIROPROXY_API_KEY 覆盖）'
+      : `${d.proxy_api_key_masked}（当前服务端配置，完整值见 .env）`;
+    $$('.proxyApiKeyText').forEach(e=>e.textContent=apiKeyText);
+    if($('#securitySummary')){
+      $('#securitySummary').innerHTML = `管理页账号：<code>${escapeHtml(d.admin_username)}</code><br>代理 API Key：<code>${escapeHtml(d.proxy_api_key_masked)}</code>${d.proxy_api_key_is_default ? '（默认值）' : '（已自定义）'}`;
+    }
+    if($('#proxyApiKeyHint')){
+      $('#proxyApiKeyHint').innerHTML = d.proxy_api_key_is_default
+        ? '默认代理 API Key 为 <code>sk-any</code>；如需自定义，请在服务端设置 <code>KIROPROXY_API_KEY</code>，并让客户端使用相同值'
+        : `当前代理 API Key 已自定义为 <code>${escapeHtml(d.proxy_api_key_masked)}</code>；客户端需要使用与服务端一致的完整值`;
+    }
+  }catch(e){
+    if($('#securitySummary'))$('#securitySummary').textContent='安全配置加载失败';
+  }
+}
+loadSecurityConfig();
 '''
 
 JS_DOCS = '''
@@ -1759,6 +1799,7 @@ function _(key) {{ return I18N[key] || key; }}
         '>永久生效（推荐，写入配置文件）<': f'>{"Permanent (Recommended, write to config)" if lang == "en" else "永久生效（推荐，写入配置文件）"}<',
         '>清除配置<': f'>{"Clear Config" if lang == "en" else "清除配置"}<',
         '>模型映射<': f'>{"Model Mapping" if lang == "en" else "模型映射"}<',
+        '>退出登录<': f'>{"Logout" if lang == "en" else "退出登录"}<',
         '>支持多种模型名称，自动映射到 Kiro 模型<': f'>{"Supports multiple model names, auto-mapped to Kiro models" if lang == "en" else "支持多种模型名称，自动映射到 Kiro 模型"}<',
         '>Kiro 模型<': f'>{"Kiro Model" if lang == "en" else "Kiro 模型"}<',
         '>能力<': f'>{"Capability" if lang == "en" else "能力"}<',
@@ -1779,7 +1820,7 @@ function _(key) {{ return I18N[key] || key; }}
         # API page - comments and tips
         '# 写入 Claude Code 配置文件': f'# {"Write to Claude Code config file" if lang == "en" else "写入 Claude Code 配置文件"}',
         '# 删除 Claude Code 配置': f'# {"Delete Claude Code config" if lang == "en" else "删除 Claude Code 配置"}',
-        '使用 <code>ANTHROPIC_AUTH_TOKEN</code> + <code>CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1</code> 可跳过登录': f'{"Use " if lang == "en" else "使用 "}<code>ANTHROPIC_AUTH_TOKEN</code> + <code>CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1</code> {"to skip login" if lang == "en" else "可跳过登录"}',
+        '使用 <code>ANTHROPIC_AUTH_TOKEN</code> + <code>CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1</code> 可跳过登录': f'{"Default proxy API key is " if lang == "en" else "默认代理 API Key 为 "}<code>sk-any</code>{"; set " if lang == "en" else "；如需自定义，请在服务端设置 "}<code>KIROPROXY_API_KEY</code>{" and use the same value in the client" if lang == "en" else "，并让客户端使用相同值"}',
     }
     
     # 组装并翻译 HTML
@@ -1788,6 +1829,11 @@ function _(key) {{ return I18N[key] || key; }}
         html_content = html_content.replace(zh, translated)
     
     html_body = html_header + html_content
+    html_body = html_body.replace(
+        '</div>\n</header>',
+        '<button class="secondary small logout-btn" onclick="logout()">退出登录</button></div>\n</header>',
+        1,
+    )
     
     return f'''<!DOCTYPE html>
 <html lang="{lang}">
@@ -1803,7 +1849,7 @@ function _(key) {{ return I18N[key] || key; }}
 <body>
 <div class="container">
 {html_body}
-<div class="footer">Kiro API Proxy v1.7.16</div>
+<div class="footer">Kiro API Proxy v{__version__}</div>
 </div>
 <script>
 {js_i18n}
@@ -1828,11 +1874,10 @@ HTML_PAGE = get_html_page() if False else f'''<!DOCTYPE html>
 <body>
 <div class="container">
 {HTML_BODY}
-<div class="footer">Kiro API Proxy v1.7.16</div>
+<div class="footer">Kiro API Proxy v{__version__}</div>
 </div>
 <script>
 {JS_SCRIPTS}
 </script>
 </body>
 </html>'''
-

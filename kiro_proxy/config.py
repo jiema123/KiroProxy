@@ -63,6 +63,8 @@ MODEL_MAPPING = {
     "gpt-4o-mini": "claude-haiku-4.5",
     "gpt-4-turbo": "claude-sonnet-4",
     "gpt-4": "claude-sonnet-4",
+    "gpt-5.4": "claude-sonnet-4.6",
+    "gpt-5.5": "claude-opus-4.7",
     "gpt-3.5-turbo": "claude-haiku-4.5",
     # OpenAI o-series -> Claude
     "o1": "claude-opus-4.5",

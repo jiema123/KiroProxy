@@ -381,6 +381,94 @@ python build.py
 
 The output files will be generated in the `dist/` directory.
 
+### Linux Binary
+
+The project can now be packaged as a single Linux binary that starts directly on Linux.
+
+```bash
+# Option 1: build on a Linux host
+python build.py --linux-binary
+
+# Option 2: build a Linux binary via Docker from macOS / Windows
+python build.py --linux-docker
+```
+
+The release artifact is `release/KiroProxy-1.8.1-Linux.tar.gz`. Extract and run:
+
+```bash
+tar -xzf release/KiroProxy-1.8.1-Linux.tar.gz
+./KiroProxy
+```
+
+For binary deployment, you can place `.env` in the same directory as the `KiroProxy` executable. The program will prefer that location.
+
+Example layout:
+
+```text
+/opt/kiroproxy/
+├── KiroProxy
+└── .env
+```
+
+Notes:
+- The Linux binary starts the service directly and does not depend on a desktop GUI.
+- The default port is `8080`; override it with the `PORT` environment variable.
+
+### Admin Login
+
+- The startup page and `/api/*` admin endpoints now require login
+- Default username: `admin`
+- Default password: `kiroproxy`
+- Override with `KIROPROXY_ADMIN_USERNAME` and `KIROPROXY_ADMIN_PASSWORD`
+- `/v1/*` proxy endpoints are not blocked by this admin login layer
+
+Recommended: create a `.env` file in the project root
+
+```bash
+cp .env.example .env
+```
+
+For binary deployment, you can put the same content into the `.env` file next to the executable instead.
+
+Then set:
+
+```env
+KIROPROXY_ADMIN_USERNAME=admin
+KIROPROXY_ADMIN_PASSWORD=change-this-password
+```
+
+### Proxy API Key
+
+- `/v1/*` and `/v1beta/*` now validate `Authorization: Bearer <key>`
+- Default key: `sk-any`
+- Override with `KIROPROXY_API_KEY`
+
+Example:
+
+```bash
+export KIROPROXY_API_KEY='your-secret-key'
+python3 run.py 8080
+```
+
+Or put it in `.env`:
+
+```env
+KIROPROXY_API_KEY=your-secret-key
+```
+
+Clients must use the same value, for example:
+
+```bash
+export ANTHROPIC_BASE_URL='http://127.0.0.1:8080'
+export ANTHROPIC_AUTH_TOKEN='your-secret-key'
+```
+
+You can also set the port in `.env`:
+
+```env
+KIRO_SERVER_PORT=8080
+```
+
 ## Use Cases
 
 * Connect Kiro-related capabilities to clients such as Claude Code, Codex CLI, and Gemini CLI

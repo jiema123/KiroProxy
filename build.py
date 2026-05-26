@@ -6,6 +6,9 @@ Supports: Windows / macOS / Linux
 Usage:
     python build.py          # Build for current platform
     python build.py --all    # Show all platform instructions
+    python build.py --linux-binary  # Build Linux binary on Linux host
+    python build.py --linux-docker  # Build Linux binary via Docker
+    python build.py --linux-docker-amd64  # Build Linux amd64 binary via Docker buildx
 """
 
 import os
@@ -14,10 +17,21 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from kiro_proxy import __version__
+
 APP_NAME = "KiroProxy"
-VERSION = "1.7.16"
+VERSION = __version__
 MAIN_SCRIPT = "run.py"
 ICON_DIR = Path("assets")
+
+
+def _release_output_name(platform: str) -> str:
+    suffix = {
+        "windows": "Windows.zip",
+        "macos": "macOS.zip",
+        "linux": "Linux.tar.gz",
+    }[platform]
+    return f"{APP_NAME}-{VERSION}-{suffix}"
 
 def get_platform():
     if sys.platform == "win32":
@@ -141,6 +155,93 @@ def build_app():
         print("[FAIL] Build failed")
         sys.exit(1)
 
+
+def build_linux_via_docker():
+    print(f"\n{'='*50}")
+    print(f"  Building {APP_NAME} v{VERSION} - linux (docker)")
+    print(f"{'='*50}\n")
+
+    dockerfile = Path("Dockerfile.binary")
+    if not dockerfile.exists():
+        print("[FAIL] Dockerfile.binary not found")
+        sys.exit(1)
+
+    subprocess.run(
+        ["docker", "build", "-f", str(dockerfile), "-t", "kiroproxy-linux-builder", "."],
+        check=True,
+    )
+    subprocess.run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "-v",
+            f"{Path.cwd()}:/src",
+            "kiroproxy-linux-builder",
+        ],
+        check=True,
+    )
+
+
+def build_linux_amd64_via_docker():
+    print(f"\n{'='*50}")
+    print(f"  Building {APP_NAME} v{VERSION} - linux/amd64 (docker buildx)")
+    print(f"{'='*50}\n")
+
+    dockerfile = Path("Dockerfile.binary")
+    if not dockerfile.exists():
+        print("[FAIL] Dockerfile.binary not found")
+        sys.exit(1)
+
+    amd64_release_dir = Path("release-amd64")
+    if amd64_release_dir.exists():
+        shutil.rmtree(amd64_release_dir)
+    amd64_release_dir.mkdir(parents=True, exist_ok=True)
+
+    subprocess.run(
+        [
+            "docker",
+            "buildx",
+            "build",
+            "--builder",
+            "colima-builder",
+            "--platform",
+            "linux/amd64",
+            "--load",
+            "-f",
+            str(dockerfile),
+            "-t",
+            "kiroproxy-linux-builder-amd64",
+            ".",
+        ],
+        check=True,
+    )
+
+    subprocess.run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "-v",
+            f"{Path.cwd()}:/src",
+            "-w",
+            "/src",
+            "kiroproxy-linux-builder-amd64",
+            "python",
+            "build.py",
+            "--linux-binary",
+        ],
+        check=True,
+    )
+
+    source = Path("release") / f"{APP_NAME}-{VERSION}-Linux.tar.gz"
+    target = amd64_release_dir / f"{APP_NAME}-{VERSION}-Linux-amd64.tar.gz"
+    if not source.exists():
+        print("[FAIL] Expected Linux release artifact not found after amd64 build")
+        sys.exit(1)
+    shutil.copy2(source, target)
+    print(f"  AMD64 Release: {target}")
+
 def create_release_package(platform, binary_path):
     release_dir = Path("release")
     release_dir.mkdir(exist_ok=True)
@@ -209,6 +310,18 @@ This script must run on the target platform.
   
   Output: release/KiroProxy-{VERSION}-Linux.tar.gz
 
+[Linux from macOS/Windows]
+  Build with Docker:
+    python build.py --linux-docker
+
+[Linux amd64 from macOS/Windows]
+  Build with Docker buildx:
+    python build.py --linux-docker-amd64
+
+  Output: release-amd64/KiroProxy-{VERSION}-Linux-amd64.tar.gz
+
+  Output: release/KiroProxy-{VERSION}-Linux.tar.gz
+
 [GitHub Actions]
   Push to GitHub and Actions will build all platforms.
   See .github/workflows/build.yml
@@ -219,5 +332,14 @@ This script must run on the target platform.
 if __name__ == "__main__":
     if "--all" in sys.argv or "-a" in sys.argv:
         show_all_platforms()
+    elif "--linux-binary" in sys.argv:
+        if get_platform() != "linux":
+            print("[FAIL] --linux-binary must run on a Linux host")
+            sys.exit(1)
+        build_app()
+    elif "--linux-docker" in sys.argv:
+        build_linux_via_docker()
+    elif "--linux-docker-amd64" in sys.argv:
+        build_linux_amd64_via_docker()
     else:
         build_app()

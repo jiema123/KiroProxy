@@ -7,7 +7,10 @@ import socket
 import json
 import webbrowser
 import threading
+import os
 from pathlib import Path
+
+from . import __version__
 
 
 def get_config_path() -> Path:
@@ -50,6 +53,12 @@ def check_port_available(port: int) -> bool:
 
 def launch_with_ui():
     """显示端口配置 UI 并启动服务器"""
+    if sys.platform.startswith("linux") and not (os.getenv("DISPLAY") or os.getenv("WAYLAND_DISPLAY")):
+        print("[!] 检测到无图形界面的 Linux 环境，使用默认端口 8080 启动")
+        from kiro_proxy.main import run
+        run(8080)
+        return
+
     try:
         import tkinter as tk
         from tkinter import ttk, messagebox
@@ -94,7 +103,7 @@ def launch_with_ui():
     title_label.pack(pady=(0, 5))
     
     # 版本
-    version_label = ttk.Label(main_frame, text="v1.7.16", foreground="gray")
+    version_label = ttk.Label(main_frame, text=f"v{__version__}", foreground="gray")
     version_label.pack(pady=(0, 20))
     
     # 端口设置框架
