@@ -150,7 +150,7 @@ class KiroCredentials:
 
     @classmethod
     def load_merged_from_cache(cls, token_path: str) -> "KiroCredentials":
-        """加载主 token 并自动合并同目录其它 JSON 补全字段。"""
+        """加载主 token，并仅合并明确关联的 clientIdHash 凭证文件。"""
         path = Path(token_path)
         if not path.exists():
             raise FileNotFoundError(f"Credential file not found: {token_path}")
@@ -158,20 +158,17 @@ class KiroCredentials:
         merged = _load_json_with_recovery(path)
 
         cache_dir = path.parent
-        if cache_dir.exists():
-            for item in sorted(cache_dir.glob("*.json")):
-                if item == path:
-                    continue
+        client_id_hash = _as_text(_pick(merged, "clientIdHash", "client_id_hash"))
+        if cache_dir.exists() and client_id_hash:
+            hash_file = cache_dir / f"{client_id_hash}.json"
+            if hash_file.exists() and hash_file != path:
                 try:
-                    extra = _load_json_with_recovery(item)
+                    extra = _load_json_with_recovery(hash_file)
                 except Exception:
-                    continue
+                    extra = {}
 
-                if not isinstance(extra, dict) or not extra:
-                    continue
-
-                # 仅补空字段，避免其它缓存覆盖主 token 最新值。
-                for key, value in extra.items():
+                for key in ("clientId", "clientSecret", "client_id", "client_secret"):
+                    value = extra.get(key)
                     if value is None:
                         continue
                     existing = merged.get(key)

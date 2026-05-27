@@ -44,7 +44,7 @@ class AccountCredentialsMergeTests(unittest.TestCase):
             self.assertEqual(creds.client_id, "cid")
             self.assertEqual(creds.client_secret, "secret-value")
 
-    def test_load_credentials_merges_profile_arn_from_neighbor_json(self):
+    def test_load_credentials_does_not_merge_profile_arn_from_neighbor_json(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             cache_dir = Path(tmpdir)
             token_file = cache_dir / "kiro-auth-token.json"
@@ -74,10 +74,7 @@ class AccountCredentialsMergeTests(unittest.TestCase):
             creds = account.load_credentials()
 
             self.assertIsNotNone(creds)
-            self.assertEqual(
-                creds.profile_arn,
-                "arn:aws:codewhisperer:us-east-1:123456789012:profile/test",
-            )
+            self.assertIsNone(creds.profile_arn)
 
     def test_load_credentials_recovers_corrupted_json_fields(self):
         with tempfile.TemporaryDirectory() as tmpdir:

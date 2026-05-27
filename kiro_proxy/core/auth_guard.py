@@ -55,6 +55,10 @@ def _apply_profile_arn(account, profile_arn: str) -> bool:
 
 def _try_backfill_profile_arn(account) -> Optional[str]:
     """尝试从环境变量或本机日志回填 profileArn。"""
+    creds = account.get_credentials()
+    if creds and getattr(creds, "auth_method", None) == "social":
+        return None
+
     env_arn = os.getenv("KIRO_PROFILE_ARN", "").strip()
     if _looks_like_profile_arn(env_arn) and _apply_profile_arn(account, env_arn):
         return env_arn
