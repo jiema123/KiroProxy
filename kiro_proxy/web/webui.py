@@ -1398,6 +1398,7 @@ function importAccounts(){
 JS_LOGIN = '''
 // Kiro 在线登录
 let loginPollTimer=null;
+let socialPollTimer=null;
 let selectedBrowser='default';
 
 function openAuthWindow(url){
@@ -1464,35 +1465,77 @@ async function startSocialLogin(provider){
       alert('启动登录失败: '+d.error);
       return;
     }
-    const opened=navigateAuthWindow(authWindow,d.login_url);
-    showSocialLoginPanel(d.provider,d.login_url,opened);
+    const opened=d.opened_by_server ? true : navigateAuthWindow(authWindow,d.login_url);
+    if(d.opened_by_server&&authWindow&&!authWindow.closed)authWindow.close();
+    showSocialLoginPanel(d.provider,d.login_url,d.callback_url,opened);
+    startSocialPoll();
   }catch(e){
     if(authWindow&&!authWindow.closed)authWindow.close();
     alert('启动登录失败: '+e.message)
   }
 }
 
-function showSocialLoginPanel(provider,loginUrl,opened){
+function showSocialLoginPanel(provider,loginUrl,callbackUrl,opened){
   const safeProvider=escapeHtml(provider);
   const safeLoginUrl=escapeAttr(loginUrl);
+  const safeCallbackUrl=escapeHtml(callbackUrl||'');
   $('#loginPanel').style.display='block';
   $('#loginContent').innerHTML=`
     <div style="text-align:center;padding:1rem">
       <p style="margin-bottom:1rem">正在使用 ${safeProvider} 登录...</p>
       <p style="color:var(--muted);font-size:0.875rem">${opened?'已在新标签页打开授权页面':'浏览器可能拦截了新标签页，请点击下方按钮打开授权页面'}</p>
+      <p style="color:var(--muted);font-size:0.75rem;margin-top:0.5rem">本地回调监听：<code>${safeCallbackUrl}</code></p>
       <p style="margin:1rem 0">
         <a href="${safeLoginUrl}" target="_blank" rel="noopener" style="color:var(--info);text-decoration:underline">打开授权页面</a>
         <button class="secondary small" style="margin-left:0.5rem" data-url="${safeLoginUrl}" onclick="copyAuthUrl(this)">复制链接</button>
       </p>
-      <p style="color:var(--muted);font-size:0.875rem;margin-top:1rem">授权完成后，请将浏览器地址栏中的完整 URL 粘贴到下方：</p>
+      <p style="color:var(--muted);font-size:0.875rem;margin-top:1rem">授权完成后会自动返回；如果浏览器没有跳转，可将地址栏完整 URL 粘贴到下方：</p>
       <input type="text" id="callbackUrl" placeholder="粘贴回调 URL..." style="width:100%;margin-top:0.5rem">
       <button onclick="handleSocialCallback()" style="margin-top:0.5rem">提交</button>
-      <p style="color:var(--muted);font-size:0.75rem;margin-top:0.5rem" id="loginStatus"></p>
+      <p style="color:var(--muted);font-size:0.75rem;margin-top:0.5rem" id="loginStatus">等待授权回调...</p>
     </div>
   `;
 }
 
+function stopSocialPoll(){
+  if(socialPollTimer){
+    clearInterval(socialPollTimer);
+    socialPollTimer=null;
+  }
+}
+
+function startSocialPoll(){
+  stopSocialPoll();
+  socialPollTimer=setInterval(pollSocialStatus,1500);
+}
+
+async function pollSocialStatus(){
+  try{
+    const r=await fetch('/api/kiro/social/status');
+    const d=await r.json();
+    if(!d.ok){
+      stopSocialPoll();
+      $('#loginStatus').textContent='❌ '+(d.error||'登录失败');
+      $('#loginStatus').style.color='var(--error)';
+      return;
+    }
+    if(d.completed){
+      stopSocialPoll();
+      $('#loginStatus').textContent='✅ '+d.message;
+      $('#loginStatus').style.color='var(--success)';
+      setTimeout(()=>{$('#loginPanel').style.display='none';loadAccounts();},1500);
+      return;
+    }
+    if(d.in_progress&&$('#loginStatus')){
+      $('#loginStatus').textContent=`等待 ${d.provider||'Social'} 授权回调...`;
+    }
+  }catch(e){
+    if($('#loginStatus'))$('#loginStatus').textContent='轮询失败: '+e.message;
+  }
+}
+
 async function handleSocialCallback(){
+  stopSocialPoll();
   const url=$('#callbackUrl').value;
   if(!url){alert('请粘贴回调 URL');return;}
   try{

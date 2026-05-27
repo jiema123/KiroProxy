@@ -12,6 +12,8 @@ from .device_flow import (
     cancel_social_auth,
     get_social_auth_state,
     start_callback_server,
+    stop_callback_server,
+    get_callback_result,
     wait_for_callback,
 )
 
@@ -28,5 +30,7 @@ __all__ = [
     "cancel_social_auth",
     "get_social_auth_state",
     "start_callback_server",
+    "stop_callback_server",
+    "get_callback_result",
     "wait_for_callback",
 ]

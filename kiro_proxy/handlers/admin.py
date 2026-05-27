@@ -13,7 +13,15 @@ from ..api_auth import get_api_key
 from ..core import state, Account, stats_manager, get_browsers_info, open_url, flow_monitor, get_account_usage
 from ..credential import quota_manager, generate_machine_id, get_kiro_version, CredentialStatus
 from ..auth import start_device_flow, poll_device_flow, cancel_device_flow, get_login_state, save_credentials_to_file
-from ..auth import start_social_auth, exchange_social_auth_token, cancel_social_auth, get_social_auth_state
+from ..auth import (
+    start_social_auth,
+    exchange_social_auth_token,
+    cancel_social_auth,
+    get_social_auth_state,
+    start_callback_server,
+    stop_callback_server,
+    get_callback_result,
+)
 from ..http_client import get_httpx_verify_setting, create_async_client
 from ..web.auth import get_admin_username
 
@@ -121,10 +129,10 @@ async def add_account(request: Request):
     name = body.get("name", f"账号{len(state.accounts)+1}")
     token_path = body.get("token_path")
     proxy_url = body.get("proxy_url")
-    
+
     if not token_path or not Path(token_path).exists():
         raise HTTPException(400, "Invalid token path")
-    
+
     account = Account(
         id=uuid.uuid4().hex[:8],
         name=name,
@@ -132,13 +140,13 @@ async def add_account(request: Request):
         proxy_url=proxy_url or None,
     )
     state.accounts.append(account)
-    
+
     # 预加载凭证
     account.load_credentials()
-    
+
     # 保存配置
     state._save_accounts()
-    
+
     return {"ok": True, "account_id": account.id}
 
 
@@ -208,13 +216,13 @@ async def speedtest():
     account = state.get_available_account()
     if not account:
         return {"ok": False, "error": "No available account"}
-    
+
     start = time.time()
     try:
         token = account.get_token()
         machine_id = account.get_machine_id()
         kiro_version = get_kiro_version()
-        
+
         headers = {
             "content-type": "application/json",
             "x-amz-user-agent": f"aws-sdk-js/1.0.0 KiroIDE-{kiro_version}-{machine_id}",
@@ -245,10 +253,10 @@ async def scan_tokens():
                     if "accessToken" in data:
                         # 检查是否已添加
                         already_added = any(a.token_path == str(f) for a in state.accounts)
-                        
+
                         auth_method = data.get("authMethod", "social")
                         client_id_hash = data.get("clientIdHash")
-                        
+
                         # 检查 IdC 配置完整性
                         idc_complete = None
                         if auth_method == "idc" and client_id_hash:
@@ -262,7 +270,7 @@ async def scan_tokens():
                                     idc_complete = False
                             else:
                                 idc_complete = False
-                        
+
                         found.append({
                             "path": str(f),
                             "name": f.stem,
@@ -283,13 +291,13 @@ async def add_from_scan(request: Request):
     body = await request.json()
     token_path = body.get("path")
     name = body.get("name", "扫描账号")
-    
+
     if not token_path or not Path(token_path).exists():
         raise HTTPException(400, "Token 文件不存在")
-    
+
     if any(a.token_path == token_path for a in state.accounts):
         raise HTTPException(400, "该账号已添加")
-    
+
     try:
         with open(token_path) as f:
             data = json.load(f)
@@ -297,20 +305,20 @@ async def add_from_scan(request: Request):
                 raise HTTPException(400, "无效的 token 文件")
     except json.JSONDecodeError:
         raise HTTPException(400, "无效的 JSON 文件")
-    
+
     account = Account(
         id=uuid.uuid4().hex[:8],
         name=name,
         token_path=token_path
     )
     state.accounts.append(account)
-    
+
     # 预加载凭证
     account.load_credentials()
-    
+
     # 保存配置
     state._save_accounts()
-    
+
     return {"ok": True, "account_id": account.id}
 
 
@@ -330,7 +338,7 @@ async def import_config(request: Request):
     body = await request.json()
     accounts = body.get("accounts", [])
     imported = 0
-    
+
     for acc_data in accounts:
         token_path = acc_data.get("token_path", "")
         if Path(token_path).exists():
@@ -344,10 +352,10 @@ async def import_config(request: Request):
                 state.accounts.append(account)
                 account.load_credentials()
                 imported += 1
-    
+
     # 保存配置
     state._save_accounts()
-    
+
     return {"ok": True, "imported": imported}
 
 
@@ -373,7 +381,7 @@ async def refresh_token_check():
                 "valid": False,
                 "error": "无法加载凭证"
             })
-    
+
     return {"accounts": results}
 
 
@@ -414,7 +422,7 @@ async def get_detailed_stats():
     """获取详细统计信息"""
     basic_stats = state.get_stats()
     detailed = stats_manager.get_all_stats()
-    
+
     return {
         **basic_stats,
         "detailed": detailed
@@ -424,7 +432,7 @@ async def get_detailed_stats():
 async def run_health_check():
     """手动触发健康检查"""
     results = []
-    
+
     for acc in state.accounts:
         if not acc.enabled:
             results.append({
@@ -434,7 +442,7 @@ async def run_health_check():
                 "healthy": False
             })
             continue
-        
+
         try:
             token = acc.get_token()
             if not token:
@@ -446,19 +454,19 @@ async def run_health_check():
                     "healthy": False
                 })
                 continue
-            
+
             headers = {
                 "Authorization": f"Bearer {token}",
                 "content-type": "application/json"
             }
-            
+
             async with create_async_client(timeout=10, account_proxy_url=acc.get_proxy_url()) as client:
                 resp = await client.get(
                     MODELS_URL,
                     headers=headers,
                     params={"origin": "AI_EDITOR"}
                 )
-                
+
                 if resp.status_code == 200:
                     if acc.status == CredentialStatus.UNHEALTHY:
                         acc.status = CredentialStatus.ACTIVE
@@ -491,7 +499,7 @@ async def run_health_check():
                         "status": f"error_{resp.status_code}",
                         "healthy": False
                     })
-                    
+
         except Exception as e:
             results.append({
                 "id": acc.id,
@@ -500,7 +508,7 @@ async def run_health_check():
                 "healthy": False,
                 "error": str(e)
             })
-    
+
     healthy_count = len([r for r in results if r["healthy"]])
     return {
         "ok": True,
@@ -524,13 +532,13 @@ async def start_kiro_login(request: Request):
     region = body.get("region", "us-east-1")
     browser = body.get("browser", "default")
     incognito = body.get("incognito", False)
-    
+
     success, result = await start_device_flow(region)
-    
+
     if success:
         # 用指定浏览器打开授权页面
         open_url(result["verification_uri"], browser, incognito)
-        
+
         return {
             "ok": True,
             "user_code": result["user_code"],
@@ -545,18 +553,18 @@ async def start_kiro_login(request: Request):
 async def poll_kiro_login():
     """轮询 Kiro 登录状态"""
     success, result = await poll_device_flow()
-    
+
     if not success:
         return {"ok": False, "error": result.get("error", "未知错误")}
-    
+
     if result.get("completed"):
         # 授权完成，保存凭证并添加账号
         credentials = result["credentials"]
-        
+
         # 保存到文件
         from ..auth.device_flow import save_credentials_to_file
         file_path = await save_credentials_to_file(credentials)
-        
+
         # 添加账号
         account = Account(
             id=uuid.uuid4().hex[:8],
@@ -566,7 +574,7 @@ async def poll_kiro_login():
         state.accounts.append(account)
         account.load_credentials()
         state._save_accounts()
-        
+
         return {
             "ok": True,
             "completed": True,
@@ -608,20 +616,28 @@ async def start_social_login(request: Request):
     provider = body.get("provider", "google")
     browser = body.get("browser", "default")
     incognito = body.get("incognito", False)
-    
+
+    callback_success, callback_result = await start_callback_server()
+    if not callback_success:
+        return {"ok": False, "error": callback_result.get("error", "启动回调服务器失败")}
+
     success, result = await start_social_auth(provider)
-    
+
     if success:
-        # 用指定浏览器打开登录页面
-        open_url(result["login_url"], browser, incognito)
-        
+        opened_by_server = False
+        if incognito or browser != "default":
+            opened_by_server = open_url(result["login_url"], browser, incognito)
+
         return {
             "ok": True,
             "provider": result["provider"],
             "login_url": result["login_url"],
+            "callback_url": callback_result.get("callback_url"),
             "state": result["state"],
+            "opened_by_server": opened_by_server,
         }
     else:
+        await stop_callback_server()
         return {"ok": False, "error": result.get("error", "未知错误")}
 
 
@@ -630,24 +646,25 @@ async def exchange_social_token(request: Request):
     body = await request.json()
     code = body.get("code")
     oauth_state = body.get("state")
-    
+
     if not code or not oauth_state:
         return {"ok": False, "error": "缺少 code 或 state"}
-    
+
     success, result = await exchange_social_auth_token(code, oauth_state)
-    
+    await stop_callback_server()
+
     if not success:
         return {"ok": False, "error": result.get("error", "未知错误")}
-    
+
     if result.get("completed"):
         # 保存凭证并添加账号
         credentials = result["credentials"]
         provider = result.get("provider", "Social")
-        
+
         # 保存到文件
         from ..auth.device_flow import save_credentials_to_file
         file_path = await save_credentials_to_file(credentials, f"kiro-{provider.lower()}-auth")
-        
+
         # 添加账号
         account = Account(
             id=uuid.uuid4().hex[:8],
@@ -657,7 +674,7 @@ async def exchange_social_token(request: Request):
         state.accounts.append(account)
         account.load_credentials()
         state._save_accounts()
-        
+
         return {
             "ok": True,
             "completed": True,
@@ -665,19 +682,71 @@ async def exchange_social_token(request: Request):
             "provider": provider,
             "message": f"{provider} 登录成功，账号已添加"
         }
-    
+
     return {"ok": False, "error": "Token 交换失败"}
 
 
 async def cancel_social_login():
     """取消 Social Auth 登录"""
     cancelled = cancel_social_auth()
+    await stop_callback_server()
     return {"ok": cancelled}
 
 
 async def get_social_login_status():
     """获取 Social Auth 状态"""
     auth_state = get_social_auth_state()
+    callback_result = get_callback_result()
+
+    if callback_result:
+        callback_code = callback_result.get("code")
+        callback_state = callback_result.get("state")
+        callback_error = callback_result.get("error")
+        await stop_callback_server()
+
+        if callback_error:
+            cancel_social_auth()
+            return {
+                "ok": False,
+                "in_progress": False,
+                "error": callback_error,
+            }
+
+        success, result = await exchange_social_auth_token(
+            callback_code,
+            callback_state,
+        )
+
+        if not success:
+            return {
+                "ok": False,
+                "in_progress": False,
+                "error": result.get("error", "Token 交换失败"),
+            }
+
+        credentials = result["credentials"]
+        provider = result.get("provider", "Social")
+
+        file_path = await save_credentials_to_file(credentials, f"kiro-{provider.lower()}-auth")
+
+        account = Account(
+            id=uuid.uuid4().hex[:8],
+            name=f"{provider} 登录账号",
+            token_path=file_path
+        )
+        state.accounts.append(account)
+        account.load_credentials()
+        state._save_accounts()
+
+        return {
+            "ok": True,
+            "in_progress": False,
+            "completed": True,
+            "account_id": account.id,
+            "provider": provider,
+            "message": f"{provider} 登录成功，账号已添加",
+        }
+
     if auth_state:
         return {
             "ok": True,
@@ -703,14 +772,14 @@ async def get_flows(
 ):
     """查询 Flows"""
     from ..core.flow_monitor import FlowState
-    
+
     state_enum = None
     if state_filter:
         try:
             state_enum = FlowState(state_filter)
         except ValueError:
             pass
-    
+
     flows = flow_monitor.query(
         protocol=protocol,
         model=model,
@@ -722,7 +791,7 @@ async def get_flows(
         limit=limit,
         offset=offset,
     )
-    
+
     return {
         "flows": [f.to_dict() for f in flows],
         "total": len(flows),
@@ -772,7 +841,7 @@ async def export_flows(request: Request):
     body = await request.json()
     flow_ids = body.get("flow_ids", [])
     format = body.get("format", "json")
-    
+
     content = flow_monitor.export(flow_ids if flow_ids else None, format)
     return {"content": content, "format": format}
 
@@ -841,14 +910,14 @@ async def import_accounts(request: Request):
     accounts_data = body.get("accounts", [])
     imported = 0
     errors = []
-    
+
     for acc_data in accounts_data:
         try:
             creds = acc_data.get("credentials", {})
             if not creds.get("accessToken"):
                 errors.append(f"{acc_data.get('name', '未知')}: 缺少 accessToken")
                 continue
-            
+
             # 保存凭证到文件
             file_path = await save_credentials_to_file({
                 "accessToken": creds.get("accessToken"),
@@ -859,7 +928,7 @@ async def import_accounts(request: Request):
                 "clientId": creds.get("clientId"),
                 "clientSecret": creds.get("clientSecret"),
             }, f"imported-{uuid.uuid4().hex[:8]}")
-            
+
             # 添加账号
             account = Account(
                 id=uuid.uuid4().hex[:8],
@@ -873,7 +942,7 @@ async def import_accounts(request: Request):
             imported += 1
         except Exception as e:
             errors.append(f"{acc_data.get('name', '未知')}: {str(e)}")
-    
+
     state._save_accounts()
     return {"ok": True, "imported": imported, "errors": errors}
 
@@ -884,10 +953,10 @@ async def add_manual_token(request: Request):
     access_token = body.get("access_token", "").strip()
     refresh_token = body.get("refresh_token", "").strip()
     name = body.get("name", "手动添加账号")
-    
+
     if not access_token:
         raise HTTPException(400, "缺少 access_token")
-    
+
     # 保存凭证到文件
     file_path = await save_credentials_to_file({
         "accessToken": access_token,
@@ -895,7 +964,7 @@ async def add_manual_token(request: Request):
         "region": body.get("region", "us-east-1"),
         "authMethod": "social",
     }, f"manual-{uuid.uuid4().hex[:8]}")
-    
+
     # 添加账号
     account = Account(
         id=uuid.uuid4().hex[:8],
@@ -905,7 +974,7 @@ async def add_manual_token(request: Request):
     state.accounts.append(account)
     account.load_credentials()
     state._save_accounts()
-    
+
     return {"ok": True, "account_id": account.id}
 
 
@@ -918,24 +987,24 @@ _remote_login_sessions = {}
 async def create_remote_login_link(request: Request):
     """创建远程登录链接"""
     body = await request.json() if request.headers.get("content-type") == "application/json" else {}
-    
+
     # 生成唯一 session ID
     session_id = uuid.uuid4().hex
     expires_at = time.time() + 600  # 10 分钟有效期
-    
+
     _remote_login_sessions[session_id] = {
         "status": "pending",
         "created_at": time.time(),
         "expires_at": expires_at,
         "provider": body.get("provider", "google"),
     }
-    
+
     # 获取服务器地址
     host = request.headers.get("host", "localhost:8080")
     scheme = "https" if request.headers.get("x-forwarded-proto") == "https" else "http"
-    
+
     login_url = f"{scheme}://{host}/remote-login/{session_id}"
-    
+
     return {
         "ok": True,
         "session_id": session_id,
@@ -949,11 +1018,11 @@ async def get_remote_login_status(session_id: str):
     session = _remote_login_sessions.get(session_id)
     if not session:
         raise HTTPException(404, "Session not found")
-    
+
     if time.time() > session["expires_at"]:
         del _remote_login_sessions[session_id]
         return {"ok": False, "error": "Session expired"}
-    
+
     return {
         "ok": True,
         "status": session["status"],
@@ -966,33 +1035,33 @@ async def complete_remote_login(session_id: str, request: Request):
     session = _remote_login_sessions.get(session_id)
     if not session:
         raise HTTPException(404, "Session not found or expired")
-    
+
     if time.time() > session["expires_at"]:
         del _remote_login_sessions[session_id]
         raise HTTPException(400, "Session expired")
-    
+
     body = await request.json()
     code = body.get("code")
     oauth_state = body.get("state")
-    
+
     if not code or not oauth_state:
         raise HTTPException(400, "Missing code or state")
-    
+
     # 交换 token
     success, result = await exchange_social_auth_token(code, oauth_state)
-    
+
     if not success:
         session["status"] = "failed"
         session["error"] = result.get("error", "Token exchange failed")
         return {"ok": False, "error": session["error"]}
-    
+
     if result.get("completed"):
         credentials = result["credentials"]
         provider = result.get("provider", "Social")
-        
+
         # 保存凭证
         file_path = await save_credentials_to_file(credentials, f"remote-{provider.lower()}")
-        
+
         # 添加账号
         account = Account(
             id=uuid.uuid4().hex[:8],
@@ -1002,16 +1071,16 @@ async def complete_remote_login(session_id: str, request: Request):
         state.accounts.append(account)
         account.load_credentials()
         state._save_accounts()
-        
+
         session["status"] = "completed"
         session["account_id"] = account.id
-        
+
         return {
             "ok": True,
             "completed": True,
             "account_id": account.id,
         }
-    
+
     return {"ok": False, "error": "Unexpected state"}
 
 
@@ -1027,7 +1096,7 @@ def get_remote_login_page(session_id: str) -> str:
         <p>请重新生成登录链接</p>
         </body></html>
         """
-    
+
     return f"""
     <!DOCTYPE html>
     <html>
@@ -1062,12 +1131,12 @@ def get_remote_login_page(session_id: str) -> str:
     <body>
         <div class="card">
             <h1>🔐 Kiro Proxy 远程登录</h1>
-            
+
             <div id="step1">
                 <p>点击下方按钮开始登录流程</p>
                 <button class="btn primary" id="startBtn" onclick="startDeviceFlow()">开始登录</button>
             </div>
-            
+
             <div id="step2" class="hidden">
                 <p>请在浏览器中输入以下验证码：</p>
                 <div class="code-display" id="userCode">----</div>
@@ -1075,34 +1144,34 @@ def get_remote_login_page(session_id: str) -> str:
                 <button class="btn" id="openAuthBtn" onclick="openAuthPage()">打开授权页面</button>
                 <div class="status info" id="waitStatus">⏳ 等待授权完成...</div>
             </div>
-            
+
             <div id="step3" class="hidden">
                 <div class="status success">✅ 登录成功！账号已添加</div>
                 <p style="margin-top:1rem">您可以关闭此页面了</p>
             </div>
-            
+
             <div class="divider">或</div>
-            
+
             <div id="manualSection">
                 <p style="font-size:0.875rem;margin-bottom:0.5rem">手动添加 Token：</p>
                 <input type="text" class="input" id="accessToken" placeholder="粘贴 accessToken...">
                 <input type="text" class="input" id="refreshToken" placeholder="粘贴 refreshToken (可选)...">
                 <button class="btn" onclick="submitManualToken()">添加账号</button>
             </div>
-            
+
             <div id="statusMsg" class="status hidden"></div>
         </div>
-        
+
         <script>
             const sessionId = '{session_id}';
             let verificationUri = null;
             let pollInterval = null;
-            
+
             async function startDeviceFlow() {{
                 const btn = document.getElementById('startBtn');
                 btn.disabled = true;
                 btn.textContent = '启动中...';
-                
+
                 try {{
                     const r = await fetch('/api/kiro/login/start', {{
                         method: 'POST',
@@ -1110,16 +1179,16 @@ def get_remote_login_page(session_id: str) -> str:
                         body: JSON.stringify({{}})
                     }});
                     const d = await r.json();
-                    
+
                     if (d.ok) {{
                         document.getElementById('step1').classList.add('hidden');
                         document.getElementById('step2').classList.remove('hidden');
                         document.getElementById('userCode').textContent = d.user_code;
                         verificationUri = d.verification_uri;
-                        
+
                         // 自动打开授权页面
                         window.open(verificationUri, '_blank');
-                        
+
                         // 开始轮询
                         startPolling();
                     }} else {{
@@ -1133,19 +1202,19 @@ def get_remote_login_page(session_id: str) -> str:
                     btn.textContent = '开始登录';
                 }}
             }}
-            
+
             function openAuthPage() {{
                 if (verificationUri) {{
                     window.open(verificationUri, '_blank');
                 }}
             }}
-            
+
             function startPolling() {{
                 pollInterval = setInterval(async () => {{
                     try {{
                         const r = await fetch('/api/kiro/login/poll');
                         const d = await r.json();
-                        
+
                         if (d.ok && d.completed) {{
                             clearInterval(pollInterval);
                             // 更新远程登录状态
@@ -1154,7 +1223,7 @@ def get_remote_login_page(session_id: str) -> str:
                                 headers: {{'Content-Type': 'application/json'}},
                                 body: JSON.stringify({{device_flow_completed: true, account_id: d.account_id}})
                             }});
-                            
+
                             document.getElementById('step2').classList.add('hidden');
                             document.getElementById('step3').classList.remove('hidden');
                             document.getElementById('manualSection').classList.add('hidden');
@@ -1167,16 +1236,16 @@ def get_remote_login_page(session_id: str) -> str:
                     }}
                 }}, 3000);
             }}
-            
+
             async function submitManualToken() {{
                 const accessToken = document.getElementById('accessToken').value.trim();
                 const refreshToken = document.getElementById('refreshToken').value.trim();
-                
+
                 if (!accessToken) {{
                     showError('请输入 accessToken');
                     return;
                 }}
-                
+
                 try {{
                     const r = await fetch('/api/accounts/manual', {{
                         method: 'POST',
@@ -1188,7 +1257,7 @@ def get_remote_login_page(session_id: str) -> str:
                         }})
                     }});
                     const d = await r.json();
-                    
+
                     if (d.ok) {{
                         document.getElementById('step1').classList.add('hidden');
                         document.getElementById('step2').classList.add('hidden');
@@ -1201,7 +1270,7 @@ def get_remote_login_page(session_id: str) -> str:
                     showError('网络错误: ' + e.message);
                 }}
             }}
-            
+
             function showError(msg) {{
                 const el = document.getElementById('statusMsg');
                 el.className = 'status error';
