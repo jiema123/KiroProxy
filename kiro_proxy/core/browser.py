@@ -4,8 +4,6 @@ import shlex
 import shutil
 import subprocess
 import platform
-import tempfile
-from pathlib import Path
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -182,31 +180,15 @@ def open_url_after_session_clear(
     browser_id: str = "default",
     incognito: bool = False,
 ) -> bool:
-    """打开临时页面，先访问清会话地址，再跳转到登录地址。"""
+    """打开登录地址。
+
+    指定浏览器/无痕模式下无法可靠地先打开第三方 logout 页面再继续跳转：
+    一旦页面离开本地临时页，setTimeout 不再可靠执行。清会话由 Web 前端
+    在同一窗口中处理；后端只负责按指定浏览器打开最终登录 URL。
+    """
     if not clear_urls:
         return open_url(url, browser_id, incognito)
-
-    first_url = clear_urls[0]
-    html = f"""<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Preparing Login</title>
-</head>
-<body>
-  <p>Preparing login...</p>
-  <script>
-    location.href = {first_url!r};
-    setTimeout(function() {{
-      location.href = {url!r};
-    }}, 900);
-  </script>
-</body>
-</html>
-"""
-    path = Path(tempfile.gettempdir()) / "kiroproxy-social-login.html"
-    path.write_text(html, encoding="utf-8")
-    return open_url(path.as_uri(), browser_id, incognito)
+    return open_url(url, browser_id, incognito)
 
 
 def get_browsers_info() -> List[dict]:
