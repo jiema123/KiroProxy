@@ -1400,6 +1400,31 @@ JS_LOGIN = '''
 let loginPollTimer=null;
 let selectedBrowser='default';
 
+function openAuthWindow(url){
+  const win=window.open(url||'about:blank','_blank');
+  return win;
+}
+
+function navigateAuthWindow(win,url){
+  if(!url)return false;
+  if(win&&!win.closed){
+    try{
+      win.location.href=url;
+      return true;
+    }catch(e){}
+  }
+  const opened=window.open(url,'_blank');
+  return !!opened;
+}
+
+function copyAuthUrl(btn){
+  copy(btn.dataset.url||'');
+}
+
+function escapeAttr(text){
+  return escapeHtml(text).replace(/"/g,'&quot;');
+}
+
 async function showLoginOptions(){
   try{
     const r=await fetch('/api/browsers');
@@ -1425,6 +1450,7 @@ function selectBrowser(id,btn){
 
 async function startSocialLogin(provider){
   const incognito=$('#incognitoMode')?.checked||false;
+  const authWindow=openAuthWindow();
   $('#loginOptions').style.display='none';
   try{
     const r=await fetch('/api/kiro/social/start',{
@@ -1433,17 +1459,31 @@ async function startSocialLogin(provider){
       body:JSON.stringify({provider,browser:selectedBrowser,incognito})
     });
     const d=await r.json();
-    if(!d.ok){alert('启动登录失败: '+d.error);return;}
-    showSocialLoginPanel(d.provider);
-  }catch(e){alert('启动登录失败: '+e.message)}
+    if(!d.ok){
+      if(authWindow&&!authWindow.closed)authWindow.close();
+      alert('启动登录失败: '+d.error);
+      return;
+    }
+    const opened=navigateAuthWindow(authWindow,d.login_url);
+    showSocialLoginPanel(d.provider,d.login_url,opened);
+  }catch(e){
+    if(authWindow&&!authWindow.closed)authWindow.close();
+    alert('启动登录失败: '+e.message)
+  }
 }
 
-function showSocialLoginPanel(provider){
+function showSocialLoginPanel(provider,loginUrl,opened){
+  const safeProvider=escapeHtml(provider);
+  const safeLoginUrl=escapeAttr(loginUrl);
   $('#loginPanel').style.display='block';
   $('#loginContent').innerHTML=`
     <div style="text-align:center;padding:1rem">
-      <p style="margin-bottom:1rem">正在使用 ${provider} 登录...</p>
-      <p style="color:var(--muted);font-size:0.875rem">请在浏览器中完成授权</p>
+      <p style="margin-bottom:1rem">正在使用 ${safeProvider} 登录...</p>
+      <p style="color:var(--muted);font-size:0.875rem">${opened?'已在新标签页打开授权页面':'浏览器可能拦截了新标签页，请点击下方按钮打开授权页面'}</p>
+      <p style="margin:1rem 0">
+        <a href="${safeLoginUrl}" target="_blank" rel="noopener" style="color:var(--info);text-decoration:underline">打开授权页面</a>
+        <button class="secondary small" style="margin-left:0.5rem" data-url="${safeLoginUrl}" onclick="copyAuthUrl(this)">复制链接</button>
+      </p>
       <p style="color:var(--muted);font-size:0.875rem;margin-top:1rem">授权完成后，请将浏览器地址栏中的完整 URL 粘贴到下方：</p>
       <input type="text" id="callbackUrl" placeholder="粘贴回调 URL..." style="width:100%;margin-top:0.5rem">
       <button onclick="handleSocialCallback()" style="margin-top:0.5rem">提交</button>
@@ -1485,6 +1525,7 @@ async function startAwsLogin(){
 
 async function startKiroLogin(browser='default'){
   const incognito=$('#incognitoMode')?.checked||false;
+  const authWindow=openAuthWindow();
   try{
     const r=await fetch('/api/kiro/login/start',{
       method:'POST',
@@ -1492,21 +1533,31 @@ async function startKiroLogin(browser='default'){
       body:JSON.stringify({browser,incognito})
     });
     const d=await r.json();
-    if(!d.ok){alert('启动登录失败: '+d.error);return;}
+    if(!d.ok){
+      if(authWindow&&!authWindow.closed)authWindow.close();
+      alert('启动登录失败: '+d.error);
+      return;
+    }
+    d.opened = navigateAuthWindow(authWindow,d.verification_uri);
     showLoginPanel(d);
     startLoginPoll();
-  }catch(e){alert('启动登录失败: '+e.message)}
+  }catch(e){
+    if(authWindow&&!authWindow.closed)authWindow.close();
+    alert('启动登录失败: '+e.message)
+  }
 }
 
 function showLoginPanel(data){
+  const safeVerificationUri=escapeAttr(data.verification_uri);
   $('#loginPanel').style.display='block';
   $('#loginContent').innerHTML=`
     <div style="text-align:center;padding:1rem">
       <p style="margin-bottom:1rem">请在浏览器中完成 AWS Builder ID 授权：</p>
+      <p style="color:var(--muted);font-size:0.875rem;margin-bottom:1rem">${data.opened?'已在新标签页打开授权页面':'浏览器可能拦截了新标签页，请点击下方链接打开授权页面'}</p>
       <div style="font-size:2rem;font-weight:bold;letter-spacing:0.5rem;padding:1rem;background:var(--bg);border-radius:8px;margin-bottom:1rem">${data.user_code}</div>
       <p style="margin-bottom:1rem">
-        <a href="${data.verification_uri}" target="_blank" style="color:var(--info);text-decoration:underline">点击打开授权页面</a>
-        <button class="secondary small" style="margin-left:0.5rem" onclick="copy('${data.verification_uri}')">复制链接</button>
+        <a href="${safeVerificationUri}" target="_blank" rel="noopener" style="color:var(--info);text-decoration:underline">点击打开授权页面</a>
+        <button class="secondary small" style="margin-left:0.5rem" data-url="${safeVerificationUri}" onclick="copyAuthUrl(this)">复制链接</button>
       </p>
       <p style="color:var(--muted);font-size:0.875rem">授权码有效期: ${Math.floor(data.expires_in/60)} 分钟</p>
       <p style="color:var(--muted);font-size:0.875rem;margin-top:0.5rem" id="loginStatus">等待授权...</p>
