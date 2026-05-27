@@ -468,10 +468,21 @@ async def exchange_social_auth_token(code: str, state: str) -> Tuple[bool, dict]
             return False, {"error": f"Token 交换失败: {error_text}"}
 
         token_data = token_resp.json()
+        access_token = token_data.get("access_token")
+        refresh_token = token_data.get("refresh_token")
+        if not access_token:
+            _social_auth_state = None
+            returned_keys = ", ".join(sorted(token_data.keys()))
+            return False, {
+                "error": (
+                    "Token 交换响应缺少 access_token"
+                    f"（返回字段: {returned_keys or '无'}）"
+                )
+            }
 
         credentials = {
-            "accessToken": token_data.get("access_token"),
-            "refreshToken": token_data.get("refresh_token"),
+            "accessToken": access_token,
+            "refreshToken": refresh_token,
             "expiresAt": datetime.now(timezone.utc).isoformat(),
             "authMethod": "social",
         }
