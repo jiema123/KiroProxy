@@ -79,6 +79,16 @@ CSS_API = '''
 .method { padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
 .method.get { background: #dcfce7; color: #166534; }
 .method.post { background: #fef3c7; color: #92400e; }
+.api-tools { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; margin-top: 1rem; }
+.api-control-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; margin: 0.75rem 0; }
+.api-control label { display: block; font-size: 0.75rem; color: var(--muted); margin-bottom: 0.25rem; }
+.api-control input, .api-control select, .api-control textarea { width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; }
+.api-control textarea { min-height: 88px; resize: vertical; }
+.api-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-top: 0.5rem; }
+.api-status { color: var(--muted); font-size: 0.875rem; }
+.api-status.ok { color: var(--success); }
+.api-status.err { color: var(--error); }
+.api-result { min-height: 96px; white-space: pre-wrap; }
 @media (prefers-color-scheme: dark) {
   .method.get { background: #14532d; color: #86efac; }
   .method.post { background: #78350f; color: #fde68a; }
@@ -315,6 +325,7 @@ HTML_API = '''
     <p style="color:var(--muted);font-size:0.875rem;margin-bottom:1rem">支持 OpenAI、Anthropic、Gemini 三种协议</p>
     <h4 style="color:var(--muted);margin-bottom:0.5rem">OpenAI 协议</h4>
     <div class="endpoint"><span class="method post">POST</span><code>/v1/chat/completions</code></div>
+    <div class="endpoint"><span class="method post">POST</span><code>/v1/responses</code></div>
     <div class="endpoint"><span class="method get">GET</span><code>/v1/models</code></div>
     <h4 style="color:var(--muted);margin-top:1rem;margin-bottom:0.5rem">Anthropic 协议</h4>
     <div class="endpoint"><span class="method post">POST</span><code>/v1/messages</code></div>
@@ -324,6 +335,63 @@ HTML_API = '''
     <h4 style="margin-top:1rem;color:var(--muted)">Base URL</h4>
     <pre><code id="baseUrl"></code></pre>
     <button class="copy-btn" onclick="copy(location.origin)" style="margin-top:0.5rem">复制</button>
+    <div class="api-tools">
+      <div>
+        <h4 style="color:var(--muted);margin-bottom:0.5rem">curl 请求示例</h4>
+        <div class="api-control-grid">
+          <div class="api-control">
+            <label for="apiCurlType">接口</label>
+            <select id="apiCurlType" onchange="updateApiCurlExample()">
+              <option value="openai-chat">OpenAI - Chat Completions</option>
+              <option value="openai-responses">OpenAI - Responses</option>
+              <option value="openai-models">OpenAI - Models</option>
+              <option value="anthropic-messages">Anthropic - Messages</option>
+              <option value="anthropic-count-tokens">Anthropic - Count Tokens</option>
+              <option value="gemini-generate">Gemini - Generate Content</option>
+            </select>
+          </div>
+          <div class="api-control">
+            <label for="apiCurlModel">模型</label>
+            <input id="apiCurlModel" value="claude-sonnet-4" oninput="updateApiCurlExample()">
+          </div>
+        </div>
+        <pre><code id="apiCurlExample"></code></pre>
+        <button class="copy-btn" onclick="copyCurrentCurl()" style="margin-top:0.5rem">复制 curl</button>
+      </div>
+      <div>
+        <h4 style="color:var(--muted);margin-bottom:0.5rem">接口测试</h4>
+        <div class="api-control-grid">
+          <div class="api-control">
+            <label for="apiTestType">接口</label>
+            <select id="apiTestType" onchange="syncApiTestSelection()">
+              <option value="openai-chat">OpenAI - Chat Completions</option>
+              <option value="openai-responses">OpenAI - Responses</option>
+              <option value="openai-models">OpenAI - Models</option>
+              <option value="anthropic-messages">Anthropic - Messages</option>
+              <option value="anthropic-count-tokens">Anthropic - Count Tokens</option>
+              <option value="gemini-generate">Gemini - Generate Content</option>
+            </select>
+          </div>
+          <div class="api-control">
+            <label for="apiTestModel">模型</label>
+            <input id="apiTestModel" value="claude-sonnet-4">
+          </div>
+          <div class="api-control">
+            <label for="apiTestKey">API Key</label>
+            <input id="apiTestKey" value="sk-any" autocomplete="off" oninput="updateApiCurlExample()">
+          </div>
+        </div>
+        <div class="api-control">
+          <label for="apiTestPrompt">测试内容</label>
+          <textarea id="apiTestPrompt">用一句话介绍 KiroProxy。</textarea>
+        </div>
+        <div class="api-actions">
+          <button onclick="runApiTest()" id="apiTestBtn">发送测试请求</button>
+          <span id="apiTestStatus" class="api-status">等待请求</span>
+        </div>
+        <pre class="api-result"><code id="apiTestResult"></code></pre>
+      </div>
+    </div>
   </div>
   <div class="card">
     <h3>配置示例</h3>
@@ -592,6 +660,159 @@ unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN KIROPROXY_API_KEY CLAUDE_CODE_DISA
 echo "配置已清除"`);
 }
 
+function getApiDemoKey(){
+  const input=$('#apiTestKey');
+  const value=input&&input.value.trim();
+  return value||'sk-any';
+}
+
+function getApiDemoModel(source){
+  const input=$(source||'#apiCurlModel');
+  return (input&&input.value.trim())||'claude-sonnet-4';
+}
+
+function getApiDemoPrompt(){
+  const input=$('#apiTestPrompt');
+  return (input&&input.value.trim())||'用一句话介绍 KiroProxy。';
+}
+
+function getApiDemoDefinition(type, model, prompt){
+  const demoPrompt=prompt||'用一句话介绍 KiroProxy。';
+  const demoModel=model||'claude-sonnet-4';
+  const defs={
+    'openai-chat':{
+      method:'POST',
+      path:'/v1/chat/completions',
+      body:{
+        model:demoModel,
+        messages:[{role:'user',content:demoPrompt}],
+        stream:false
+      }
+    },
+    'openai-models':{
+      method:'GET',
+      path:'/v1/models',
+      body:null
+    },
+    'openai-responses':{
+      method:'POST',
+      path:'/v1/responses',
+      body:{
+        model:demoModel,
+        input:demoPrompt,
+        stream:false
+      }
+    },
+    'anthropic-messages':{
+      method:'POST',
+      path:'/v1/messages',
+      body:{
+        model:demoModel,
+        max_tokens:256,
+        messages:[{role:'user',content:demoPrompt}],
+        stream:false
+      }
+    },
+    'anthropic-count-tokens':{
+      method:'POST',
+      path:'/v1/messages/count_tokens',
+      body:{
+        model:demoModel,
+        messages:[{role:'user',content:demoPrompt}]
+      }
+    },
+    'gemini-generate':{
+      method:'POST',
+      path:`/v1/models/${encodeURIComponent(demoModel)}:generateContent`,
+      body:{
+        contents:[{role:'user',parts:[{text:demoPrompt}]}]
+      }
+    }
+  };
+  return defs[type]||defs['openai-chat'];
+}
+
+function shellQuote(value){
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+function buildApiCurl(type, model, prompt){
+  const def=getApiDemoDefinition(type, model, prompt);
+  const url=location.origin+def.path;
+  const lines=[
+    `curl -X ${def.method} ${shellQuote(url)} \\\\`,
+    `  -H ${shellQuote('Authorization: Bearer '+getApiDemoKey())}`
+  ];
+  if(def.body){
+    lines[lines.length-1]+=' \\\\';
+    lines.push(`  -H ${shellQuote('Content-Type: application/json')} \\\\`);
+    lines.push(`  -d ${shellQuote(JSON.stringify(def.body,null,2))}`);
+  }
+  return lines.join('\\n');
+}
+
+function updateApiCurlExample(){
+  const target=$('#apiCurlExample');
+  if(!target)return;
+  const type=$('#apiCurlType')?$('#apiCurlType').value:'openai-chat';
+  target.textContent=buildApiCurl(type, getApiDemoModel('#apiCurlModel'), getApiDemoPrompt());
+}
+
+function copyCurrentCurl(){
+  const target=$('#apiCurlExample');
+  if(target)copy(target.textContent);
+}
+
+function syncApiTestSelection(){
+  const testType=$('#apiTestType');
+  const curlType=$('#apiCurlType');
+  if(testType&&curlType){
+    curlType.value=testType.value;
+    updateApiCurlExample();
+  }
+}
+
+async function runApiTest(){
+  const btn=$('#apiTestBtn');
+  const status=$('#apiTestStatus');
+  const result=$('#apiTestResult');
+  const type=$('#apiTestType')?$('#apiTestType').value:'openai-chat';
+  const def=getApiDemoDefinition(type, getApiDemoModel('#apiTestModel'), getApiDemoPrompt());
+  const headers={'Authorization':'Bearer '+getApiDemoKey()};
+  const options={method:def.method,headers};
+  if(def.body){
+    headers['Content-Type']='application/json';
+    options.body=JSON.stringify(def.body);
+  }
+  if(btn)btn.disabled=true;
+  if(status){
+    status.textContent='请求中...';
+    status.className='api-status';
+  }
+  if(result)result.textContent='';
+  try{
+    const started=performance.now();
+    const r=await fetch(def.path,options);
+    const elapsed=Math.round(performance.now()-started);
+    const text=await r.text();
+    let display=text;
+    try{display=JSON.stringify(JSON.parse(text),null,2)}catch(e){}
+    if(status){
+      status.textContent=`HTTP ${r.status} · ${elapsed}ms`;
+      status.className='api-status '+(r.ok?'ok':'err');
+    }
+    if(result)result.textContent=display||'(empty response)';
+  }catch(e){
+    if(status){
+      status.textContent='请求失败';
+      status.className='api-status err';
+    }
+    if(result)result.textContent=e&&e.message?e.message:String(e);
+  }finally{
+    if(btn)btn.disabled=false;
+  }
+}
+
 function formatUptime(s){
   if(s<60)return s+_('time.seconds');
   if(s<3600)return Math.floor(s/60)+_('time.minutes');
@@ -660,6 +881,7 @@ function copyRestartCmd(){
 // URLs
 $('#baseUrl').textContent=location.origin;
 $$('.pyUrl').forEach(e=>e.textContent=location.origin);
+updateApiCurlExample();
 
 async function loadSecurityConfig(){
   try{
@@ -669,6 +891,10 @@ async function loadSecurityConfig(){
       ? 'sk-any（默认，可由 KIROPROXY_API_KEY 覆盖）'
       : `${d.proxy_api_key_masked}（当前服务端配置，完整值见 .env）`;
     $$('.proxyApiKeyText').forEach(e=>e.textContent=apiKeyText);
+    if($('#apiTestKey')&&d.proxy_api_key_is_default){
+      $('#apiTestKey').value='sk-any';
+      updateApiCurlExample();
+    }
     if($('#securitySummary')){
       $('#securitySummary').innerHTML = `管理页账号：<code>${escapeHtml(d.admin_username)}</code><br>代理 API Key：<code>${escapeHtml(d.proxy_api_key_masked)}</code>${d.proxy_api_key_is_default ? '（默认值）' : '（已自定义）'}`;
     }

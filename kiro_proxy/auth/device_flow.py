@@ -58,6 +58,14 @@ _callback_server = None
 # Kiro OIDC 配置
 KIRO_START_URL = "https://view.awsapps.com/start"
 KIRO_AUTH_ENDPOINT = "https://prod.us-east-1.auth.desktop.kiro.dev"
+SOCIAL_AUTH_CALLBACK_HOST = "localhost"
+SOCIAL_AUTH_CALLBACK_BIND_HOST = "127.0.0.1"
+SOCIAL_AUTH_CALLBACK_PORT = 3128
+SOCIAL_AUTH_CALLBACK_PATH = "/oauth/callback"
+SOCIAL_AUTH_REDIRECT_URI = (
+    f"http://{SOCIAL_AUTH_CALLBACK_HOST}:{SOCIAL_AUTH_CALLBACK_PORT}"
+    f"{SOCIAL_AUTH_CALLBACK_PATH}"
+)
 KIRO_SCOPES = [
     "codewhisperer:completions",
     "codewhisperer:analysis",
@@ -363,12 +371,9 @@ async def start_social_auth(provider: str) -> Tuple[bool, dict]:
     code_challenge = _generate_code_challenge(code_verifier)
     oauth_state = _generate_oauth_state()
     
-    # 回调地址
-    redirect_uri = "http://127.0.0.1:19823/kiro-social-callback"
-    
     # 构建登录 URL
     from urllib.parse import urlencode, quote
-    login_url = f"{KIRO_AUTH_ENDPOINT}/login?idp={provider_normalized}&redirect_uri={quote(redirect_uri)}&code_challenge={quote(code_challenge)}&code_challenge_method=S256&state={quote(oauth_state)}"
+    login_url = f"{KIRO_AUTH_ENDPOINT}/login?idp={provider_normalized}&redirect_uri={quote(SOCIAL_AUTH_REDIRECT_URI)}&code_challenge={quote(code_challenge)}&code_challenge_method=S256&state={quote(oauth_state)}"
     
     print(f"[SocialAuth] 登录 URL: {login_url}")
     
@@ -421,7 +426,7 @@ async def exchange_social_auth_token(code: str, state: str) -> Tuple[bool, dict]
     token_body = {
         "grant_type": "authorization_code",
         "code": code,
-        "redirect_uri": "http://127.0.0.1:19823/kiro-social-callback",
+        "redirect_uri": SOCIAL_AUTH_REDIRECT_URI,
         "code_verifier": _social_auth_state.code_verifier,
     }
     
@@ -515,16 +520,20 @@ async def start_callback_server() -> Tuple[bool, dict]:
         return web.Response(text=html, content_type="text/html")
     
     app = web.Application()
-    app.router.add_get("/kiro-social-callback", handle_callback)
+    app.router.add_get(SOCIAL_AUTH_CALLBACK_PATH, handle_callback)
     
     runner = web.AppRunner(app)
     await runner.setup()
     
     try:
-        site = web.TCPSite(runner, "127.0.0.1", 19823)
+        site = web.TCPSite(
+            runner,
+            SOCIAL_AUTH_CALLBACK_BIND_HOST,
+            SOCIAL_AUTH_CALLBACK_PORT,
+        )
         await site.start()
-        print("[SocialAuth] 回调服务器已启动: http://127.0.0.1:19823")
-        return True, {"port": 19823}
+        print(f"[SocialAuth] 回调服务器已启动: {SOCIAL_AUTH_REDIRECT_URI}")
+        return True, {"port": SOCIAL_AUTH_CALLBACK_PORT}
     except Exception as e:
         return False, {"error": f"启动回调服务器失败: {e}"}
 
