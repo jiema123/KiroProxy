@@ -23,6 +23,7 @@ from pathlib import Path
 from dataclasses import dataclass, asdict
 from typing import Optional, Tuple
 from datetime import datetime, timezone
+from urllib.parse import urlencode
 
 
 @dataclass
@@ -67,6 +68,15 @@ SOCIAL_AUTH_REDIRECT_URI = (
     f"http://{SOCIAL_AUTH_CALLBACK_HOST}:{SOCIAL_AUTH_CALLBACK_PORT}"
     f"{SOCIAL_AUTH_CALLBACK_PATH}"
 )
+SOCIAL_AUTH_SESSION_CLEAR_URLS = {
+    "Google": [
+        "https://accounts.google.com/Logout",
+        "https://accounts.google.com/AccountChooser",
+    ],
+    "GitHub": [
+        "https://github.com/logout",
+    ],
+}
 KIRO_SCOPES = [
     "codewhisperer:completions",
     "codewhisperer:analysis",
@@ -373,8 +383,17 @@ async def start_social_auth(provider: str) -> Tuple[bool, dict]:
     oauth_state = _generate_oauth_state()
 
     # 构建登录 URL
-    from urllib.parse import urlencode, quote
-    login_url = f"{KIRO_AUTH_ENDPOINT}/login?idp={provider_normalized}&redirect_uri={quote(SOCIAL_AUTH_REDIRECT_URI)}&code_challenge={quote(code_challenge)}&code_challenge_method=S256&state={quote(oauth_state)}&prompt=login"
+    login_params = {
+        "idp": provider_normalized,
+        "redirect_uri": SOCIAL_AUTH_REDIRECT_URI,
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
+        "state": oauth_state,
+        "prompt": "login",
+        "nonce": secrets.token_urlsafe(16),
+        "cache_bust": str(int(time.time() * 1000)),
+    }
+    login_url = f"{KIRO_AUTH_ENDPOINT}/login?{urlencode(login_params)}"
 
     print(f"[SocialAuth] 登录 URL: {login_url}")
 
@@ -392,6 +411,7 @@ async def start_social_auth(provider: str) -> Tuple[bool, dict]:
         "login_url": login_url,
         "state": oauth_state,
         "provider": provider_normalized,
+        "pre_logout_urls": SOCIAL_AUTH_SESSION_CLEAR_URLS.get(provider_normalized, []),
     }
 
 
@@ -463,6 +483,7 @@ async def exchange_social_auth_token(code: str, state: str) -> Tuple[bool, dict]
             credentials["expiresAt"] = expires_at.isoformat()
 
         provider = _social_auth_state.provider
+        credentials["provider"] = provider
         _social_auth_state = None
 
         print(f"[SocialAuth] {provider} 登录成功！")

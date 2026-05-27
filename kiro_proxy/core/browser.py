@@ -4,6 +4,8 @@ import shlex
 import shutil
 import subprocess
 import platform
+import tempfile
+from pathlib import Path
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -172,6 +174,39 @@ def open_url(url: str, browser_id: str = "default", incognito: bool = False) -> 
     except Exception as e:
         print(f"[Browser] 打开失败: {e}")
         return False
+
+
+def open_url_after_session_clear(
+    url: str,
+    clear_urls: List[str],
+    browser_id: str = "default",
+    incognito: bool = False,
+) -> bool:
+    """打开临时页面，先访问清会话地址，再跳转到登录地址。"""
+    if not clear_urls:
+        return open_url(url, browser_id, incognito)
+
+    first_url = clear_urls[0]
+    html = f"""<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Preparing Login</title>
+</head>
+<body>
+  <p>Preparing login...</p>
+  <script>
+    location.href = {first_url!r};
+    setTimeout(function() {{
+      location.href = {url!r};
+    }}, 900);
+  </script>
+</body>
+</html>
+"""
+    path = Path(tempfile.gettempdir()) / "kiroproxy-social-login.html"
+    path.write_text(html, encoding="utf-8")
+    return open_url(path.as_uri(), browser_id, incognito)
 
 
 def get_browsers_info() -> List[dict]:

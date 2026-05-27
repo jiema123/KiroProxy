@@ -1418,6 +1418,23 @@ function navigateAuthWindow(win,url){
   return !!opened;
 }
 
+function navigateAuthWindowWithSessionClear(win,clearUrls,loginUrl){
+  const urls=(clearUrls||[]).filter(Boolean);
+  if(!urls.length)return navigateAuthWindow(win,loginUrl);
+  const opened=navigateAuthWindow(win,urls[0]);
+  const targetWindow=(win&&!win.closed)?win:null;
+  setTimeout(()=>{
+    if(targetWindow&&!targetWindow.closed){
+      try{
+        targetWindow.location.href=loginUrl;
+        return;
+      }catch(e){}
+    }
+    window.open(loginUrl,'_blank');
+  },900);
+  return opened;
+}
+
 function copyAuthUrl(btn){
   copy(btn.dataset.url||'');
 }
@@ -1437,8 +1454,10 @@ async function showLoginOptions(){
       `).join('');
     }
     selectedBrowser='default';
+    if($('#incognitoMode'))$('#incognitoMode').checked=true;
     $('#loginOptions').style.display='block';
   }catch(e){
+    if($('#incognitoMode'))$('#incognitoMode').checked=true;
     $('#loginOptions').style.display='block';
   }
 }
@@ -1465,7 +1484,7 @@ async function startSocialLogin(provider){
       alert('启动登录失败: '+d.error);
       return;
     }
-    const opened=d.opened_by_server ? true : navigateAuthWindow(authWindow,d.login_url);
+    const opened=d.opened_by_server ? true : navigateAuthWindowWithSessionClear(authWindow,d.pre_logout_urls,d.login_url);
     if(d.opened_by_server&&authWindow&&!authWindow.closed)authWindow.close();
     showSocialLoginPanel(d.provider,d.login_url,d.callback_url,opened);
     startSocialPoll();

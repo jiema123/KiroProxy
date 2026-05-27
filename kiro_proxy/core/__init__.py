@@ -5,7 +5,7 @@ from .persistence import load_config, save_config, CONFIG_FILE
 from .retry import RetryableRequest, is_retryable_error, RETRYABLE_STATUS_CODES, CircuitBreaker
 from .scheduler import scheduler
 from .stats import stats_manager
-from .browser import detect_browsers, open_url, get_browsers_info
+from .browser import detect_browsers, open_url, open_url_after_session_clear, get_browsers_info
 from .flow_monitor import flow_monitor, FlowMonitor, LLMFlow, FlowState, TokenUsage
 from .usage import get_usage_limits, get_account_usage, UsageInfo
 from .history_manager import (
@@ -24,7 +24,7 @@ __all__ = [
     "load_config", "save_config", "CONFIG_FILE",
     "RetryableRequest", "is_retryable_error", "RETRYABLE_STATUS_CODES", "CircuitBreaker",
     "scheduler", "stats_manager",
-    "detect_browsers", "open_url", "get_browsers_info",
+    "detect_browsers", "open_url", "open_url_after_session_clear", "get_browsers_info",
     "flow_monitor", "FlowMonitor", "LLMFlow", "FlowState", "TokenUsage",
     "get_usage_limits", "get_account_usage", "UsageInfo",
     "HistoryManager", "HistoryConfig", "TruncateStrategy",

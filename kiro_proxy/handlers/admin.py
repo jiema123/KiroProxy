@@ -10,7 +10,7 @@ from fastapi import Request, HTTPException, Query
 
 from ..config import TOKEN_PATH, MODELS_URL
 from ..api_auth import get_api_key
-from ..core import state, Account, stats_manager, get_browsers_info, open_url, flow_monitor, get_account_usage
+from ..core import state, Account, stats_manager, get_browsers_info, open_url, open_url_after_session_clear, flow_monitor, get_account_usage
 from ..credential import quota_manager, generate_machine_id, get_kiro_version, CredentialStatus
 from ..auth import start_device_flow, poll_device_flow, cancel_device_flow, get_login_state, save_credentials_to_file
 from ..auth import (
@@ -32,6 +32,30 @@ def _mask_secret(value: str) -> str:
     if len(value) <= 6:
         return "*" * len(value)
     return f"{value[:3]}***{value[-2:]}"
+
+
+async def _save_social_account(credentials: dict, provider: str) -> Account:
+    """Save or update a social login account for the provider."""
+    file_path = await save_credentials_to_file(credentials, f"kiro-{provider.lower()}-auth")
+    account_name = f"{provider} 登录账号"
+
+    for account in state.accounts:
+        if account.token_path == file_path:
+            account.name = account_name
+            account.enabled = True
+            account.load_credentials()
+            state._save_accounts()
+            return account
+
+    account = Account(
+        id=uuid.uuid4().hex[:8],
+        name=account_name,
+        token_path=file_path
+    )
+    state.accounts.append(account)
+    account.load_credentials()
+    state._save_accounts()
+    return account
 
 
 async def get_status():
@@ -626,12 +650,18 @@ async def start_social_login(request: Request):
     if success:
         opened_by_server = False
         if incognito or browser != "default":
-            opened_by_server = open_url(result["login_url"], browser, incognito)
+            opened_by_server = open_url_after_session_clear(
+                result["login_url"],
+                result.get("pre_logout_urls", []),
+                browser,
+                incognito,
+            )
 
         return {
             "ok": True,
             "provider": result["provider"],
             "login_url": result["login_url"],
+            "pre_logout_urls": result.get("pre_logout_urls", []),
             "callback_url": callback_result.get("callback_url"),
             "state": result["state"],
             "opened_by_server": opened_by_server,
@@ -661,19 +691,7 @@ async def exchange_social_token(request: Request):
         credentials = result["credentials"]
         provider = result.get("provider", "Social")
 
-        # 保存到文件
-        from ..auth.device_flow import save_credentials_to_file
-        file_path = await save_credentials_to_file(credentials, f"kiro-{provider.lower()}-auth")
-
-        # 添加账号
-        account = Account(
-            id=uuid.uuid4().hex[:8],
-            name=f"{provider} 登录账号",
-            token_path=file_path
-        )
-        state.accounts.append(account)
-        account.load_credentials()
-        state._save_accounts()
+        account = await _save_social_account(credentials, provider)
 
         return {
             "ok": True,
@@ -727,16 +745,7 @@ async def get_social_login_status():
         credentials = result["credentials"]
         provider = result.get("provider", "Social")
 
-        file_path = await save_credentials_to_file(credentials, f"kiro-{provider.lower()}-auth")
-
-        account = Account(
-            id=uuid.uuid4().hex[:8],
-            name=f"{provider} 登录账号",
-            token_path=file_path
-        )
-        state.accounts.append(account)
-        account.load_credentials()
-        state._save_accounts()
+        account = await _save_social_account(credentials, provider)
 
         return {
             "ok": True,
