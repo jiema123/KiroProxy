@@ -415,6 +415,39 @@ async def start_social_auth(provider: str) -> Tuple[bool, dict]:
     }
 
 
+def _normalize_social_token_response(token_data: dict, provider: str) -> Tuple[bool, dict]:
+    """Normalize Kiro social OAuth token response into local credentials."""
+    access_token = token_data.get("access_token") or token_data.get("accessToken")
+    refresh_token = token_data.get("refresh_token") or token_data.get("refreshToken")
+    profile_arn = token_data.get("profileArn") or token_data.get("profile_arn")
+    if not access_token:
+        returned_keys = ", ".join(sorted(token_data.keys()))
+        return False, {
+            "error": (
+                "Token 交换响应缺少 access_token/accessToken"
+                f"（返回字段: {returned_keys or '无'}）"
+            )
+        }
+
+    credentials = {
+        "accessToken": access_token,
+        "refreshToken": refresh_token,
+        "expiresAt": datetime.now(timezone.utc).isoformat(),
+        "authMethod": "social",
+        "provider": provider,
+    }
+    if profile_arn:
+        credentials["profileArn"] = profile_arn
+
+    expires_in = token_data.get("expires_in") or token_data.get("expiresIn")
+    if expires_in:
+        from datetime import timedelta
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
+        credentials["expiresAt"] = expires_at.isoformat()
+
+    return True, {"credentials": credentials}
+
+
 async def exchange_social_auth_token(code: str, state: str) -> Tuple[bool, dict]:
     """
     用授权码交换 Token
@@ -467,34 +500,14 @@ async def exchange_social_auth_token(code: str, state: str) -> Tuple[bool, dict]
             _social_auth_state = None
             return False, {"error": f"Token 交换失败: {error_text}"}
 
-        token_data = token_resp.json()
-        access_token = token_data.get("access_token")
-        refresh_token = token_data.get("refresh_token")
-        if not access_token:
-            _social_auth_state = None
-            returned_keys = ", ".join(sorted(token_data.keys()))
-            return False, {
-                "error": (
-                    "Token 交换响应缺少 access_token"
-                    f"（返回字段: {returned_keys or '无'}）"
-                )
-            }
-
-        credentials = {
-            "accessToken": access_token,
-            "refreshToken": refresh_token,
-            "expiresAt": datetime.now(timezone.utc).isoformat(),
-            "authMethod": "social",
-        }
-
-        # 计算过期时间
-        if expires_in := token_data.get("expires_in"):
-            from datetime import timedelta
-            expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
-            credentials["expiresAt"] = expires_at.isoformat()
-
         provider = _social_auth_state.provider
-        credentials["provider"] = provider
+        token_data = token_resp.json()
+        normalized_ok, normalized_result = _normalize_social_token_response(token_data, provider)
+        if not normalized_ok:
+            _social_auth_state = None
+            return False, normalized_result
+
+        credentials = normalized_result["credentials"]
         _social_auth_state = None
 
         print(f"[SocialAuth] {provider} 登录成功！")
